@@ -23,6 +23,10 @@ func main() {
 	// Health check
 	mux.HandleFunc("GET /health", handlers.Health)
 
+	// Documentation
+	mux.HandleFunc("GET /docs", handlers.Docs(cfg))
+	mux.HandleFunc("GET /docs/", handlers.Docs(cfg))
+
 	// Webhook endpoints
 	mux.HandleFunc("POST /api/calendar", middleware.Auth(cfg, handlers.Calendar(cfg)))
 	mux.HandleFunc("POST /api/gmail", middleware.Auth(cfg, handlers.Gmail(cfg)))

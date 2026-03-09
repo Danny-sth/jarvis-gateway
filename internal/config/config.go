@@ -11,6 +11,7 @@ type Config struct {
 	TelegramChatID string            `json:"telegram_chat_id"`
 	Tokens         map[string]string `json:"tokens"` // source -> token
 	OpenClawBin    string            `json:"openclaw_bin"`
+	DocsPath       string            `json:"docs_path"`
 }
 
 func Load() (*Config, error) {
