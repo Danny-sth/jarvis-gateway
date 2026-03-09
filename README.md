@@ -4,15 +4,15 @@ HTTP gateway для приёма webhooks и отправки уведомлен
 
 ## Endpoints
 
-| Method | Path | Описание |
-|--------|------|----------|
-| GET | /health | Healthcheck |
-| GET | /docs | Документация (Obsidian → HTML) |
-| GET | /docs/{name} | Конкретный документ |
-| POST | /api/calendar | Google Calendar events |
-| POST | /api/gmail | Gmail notifications |
-| POST | /api/github | GitHub webhooks |
-| POST | /api/custom | Custom webhooks |
+| Method | Path | Auth | Описание |
+|--------|------|------|----------|
+| GET | /health | - | Healthcheck |
+| GET | /docs | BasicAuth | Документация (Obsidian → HTML) |
+| GET | /docs/{name} | BasicAuth | Конкретный документ |
+| POST | /api/calendar | Token | Google Calendar events |
+| POST | /api/gmail | Token | Gmail notifications |
+| POST | /api/github | Token | GitHub webhooks |
+| POST | /api/custom | Token | Custom webhooks |
 
 ## Сборка
 
@@ -90,10 +90,42 @@ sudo systemctl start jarvis-gateway
 
 См. [scripts/README.md](scripts/README.md) для инструкции по настройке.
 
+## Authentication
+
+### BasicAuth (для /docs)
+
+Защита документации логином и паролем:
+
+```json
+{
+  "basic_auth": {
+    "username": "user",
+    "password": "secret"
+  }
+}
+```
+
+Доступ: `curl -u user:secret https://example.com/docs`
+
+### Token Auth (для /api/*)
+
+Webhook endpoints требуют токен в заголовке:
+
+```
+Authorization: Bearer YOUR_TOKEN
+```
+
+или
+
+```
+X-Webhook-Token: YOUR_TOKEN
+```
+
 ## Documentation
 
 Endpoint `/docs` отдаёт документацию из Obsidian vault в HTML формате.
 Файлы читаются динамически при каждом запросе (изменения отражаются сразу).
+Защищён BasicAuth.
 
 Конфиг:
 ```json
