@@ -10,7 +10,6 @@ import (
 	"jarvis-gateway/internal/config"
 	"jarvis-gateway/internal/handlers"
 	"jarvis-gateway/internal/middleware"
-	"jarvis-gateway/internal/scheduler"
 )
 
 func main() {
@@ -42,17 +41,12 @@ func main() {
 		Handler: handler,
 	}
 
-	// Start calendar scheduler
-	calScheduler := scheduler.NewCalendarScheduler(cfg)
-	calScheduler.Start()
-
 	// Graceful shutdown
 	go func() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 		<-sigChan
 		log.Println("Shutting down...")
-		calScheduler.Stop()
 		server.Close()
 	}()
 
