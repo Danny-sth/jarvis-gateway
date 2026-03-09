@@ -83,12 +83,22 @@ sudo systemctl enable jarvis-gateway
 sudo systemctl start jarvis-gateway
 ```
 
-## Google Apps Script
+## Calendar Scheduler
 
-Для автоматических напоминаний о событиях календаря используйте скрипт:
-`scripts/calendar-reminder.gs`
+Встроенный планировщик проверяет календарь каждые 5 минут и отправляет напоминания за 15 минут до события.
 
-См. [scripts/README.md](scripts/README.md) для инструкции по настройке.
+Конфиг:
+```json
+{
+  "openclaw_bin": "/usr/bin/openclaw",
+  "telegram_chat_id": "764733417"
+}
+```
+
+Логи:
+```bash
+journalctl -u jarvis-gateway | grep "Calendar"
+```
 
 ## Authentication
 
