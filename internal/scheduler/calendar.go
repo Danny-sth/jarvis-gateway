@@ -111,8 +111,8 @@ func (s *CalendarScheduler) getUpcomingEvents() ([]CalendarEvent, error) {
 		"-j",
 	)
 
-	// Set keyring password env (empty for file-based)
-	cmd.Env = append(cmd.Environ(), "GOG_KEYRING_PASSWORD=")
+	// Set keyring password env
+	cmd.Env = append(cmd.Environ(), "GOG_KEYRING_PASSWORD=openclaw")
 
 	output, err := cmd.Output()
 	if err != nil {
