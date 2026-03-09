@@ -6,12 +6,18 @@ import (
 	"path/filepath"
 )
 
+type BasicAuthConfig struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 type Config struct {
 	Port           string            `json:"port"`
 	TelegramChatID string            `json:"telegram_chat_id"`
 	Tokens         map[string]string `json:"tokens"` // source -> token
 	OpenClawBin    string            `json:"openclaw_bin"`
 	DocsPath       string            `json:"docs_path"`
+	BasicAuth      BasicAuthConfig   `json:"basic_auth"`
 }
 
 func Load() (*Config, error) {

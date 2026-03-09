@@ -8,6 +8,36 @@ import (
 	"jarvis-gateway/internal/config"
 )
 
+// BasicAuth middleware for protecting web pages with login/password
+func BasicAuth(cfg *config.Config, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// If no credentials configured, skip auth
+		if cfg.BasicAuth.Username == "" || cfg.BasicAuth.Password == "" {
+			next(w, r)
+			return
+		}
+
+		user, pass, ok := r.BasicAuth()
+		if !ok {
+			w.Header().Set("WWW-Authenticate", `Basic realm="JARVIS Gateway"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		userMatch := subtle.ConstantTimeCompare([]byte(user), []byte(cfg.BasicAuth.Username)) == 1
+		passMatch := subtle.ConstantTimeCompare([]byte(pass), []byte(cfg.BasicAuth.Password)) == 1
+
+		if !userMatch || !passMatch {
+			w.Header().Set("WWW-Authenticate", `Basic realm="JARVIS Gateway"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		next(w, r)
+	}
+}
+
+// Auth middleware for webhook token authentication
 func Auth(cfg *config.Config, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Extract source from path: /api/calendar -> calendar
