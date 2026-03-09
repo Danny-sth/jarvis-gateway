@@ -7,6 +7,8 @@ HTTP gateway для приёма webhooks и отправки уведомлен
 | Method | Path | Описание |
 |--------|------|----------|
 | GET | /health | Healthcheck |
+| GET | /docs | Документация (Obsidian → HTML) |
+| GET | /docs/{name} | Конкретный документ |
 | POST | /api/calendar | Google Calendar events |
 | POST | /api/gmail | Gmail notifications |
 | POST | /api/github | GitHub webhooks |
@@ -79,4 +81,23 @@ sudo cp jarvis-gateway.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable jarvis-gateway
 sudo systemctl start jarvis-gateway
+```
+
+## Google Apps Script
+
+Для автоматических напоминаний о событиях календаря используйте скрипт:
+`scripts/calendar-reminder.gs`
+
+См. [scripts/README.md](scripts/README.md) для инструкции по настройке.
+
+## Documentation
+
+Endpoint `/docs` отдаёт документацию из Obsidian vault в HTML формате.
+Файлы читаются динамически при каждом запросе (изменения отражаются сразу).
+
+Конфиг:
+```json
+{
+  "docs_path": "/opt/obsidian-vault/Coding/OpenClaw"
+}
 ```
