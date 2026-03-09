@@ -12,13 +12,33 @@ import (
 	"jarvis-gateway/internal/config"
 )
 
+type CalendarDateTime struct {
+	DateTime string `json:"dateTime"`
+	TimeZone string `json:"timeZone"`
+}
+
 type CalendarEvent struct {
-	ID        string    `json:"id"`
-	Summary   string    `json:"summary"`
-	Start     time.Time `json:"start"`
-	End       time.Time `json:"end"`
-	Location  string    `json:"location"`
-	HangoutLink string  `json:"hangoutLink"`
+	ID          string           `json:"id"`
+	Summary     string           `json:"summary"`
+	Description string           `json:"description"`
+	Start       CalendarDateTime `json:"start"`
+	End         CalendarDateTime `json:"end"`
+	Location    string           `json:"location"`
+	HangoutLink string           `json:"hangoutLink"`
+}
+
+type GogCalendarResponse struct {
+	Events []CalendarEvent `json:"events"`
+}
+
+func (e *CalendarEvent) StartTime() time.Time {
+	t, _ := time.Parse(time.RFC3339, e.Start.DateTime)
+	return t
+}
+
+func (e *CalendarEvent) EndTime() time.Time {
+	t, _ := time.Parse(time.RFC3339, e.End.DateTime)
+	return t
 }
 
 type CalendarScheduler struct {
@@ -74,7 +94,7 @@ func (s *CalendarScheduler) checkCalendar() {
 	reminderWindow := 15 * time.Minute
 
 	for _, event := range events {
-		timeUntil := event.Start.Sub(now)
+		timeUntil := event.StartTime().Sub(now)
 
 		// Skip if event already started or too far away
 		if timeUntil < 0 || timeUntil > reminderWindow+5*time.Minute {
@@ -99,9 +119,9 @@ func (s *CalendarScheduler) checkCalendar() {
 }
 
 func (s *CalendarScheduler) getUpcomingEvents() ([]CalendarEvent, error) {
-	// Use gog to get calendar events
-	from := time.Now().Format(time.RFC3339)
-	to := time.Now().Add(30 * time.Minute).Format(time.RFC3339)
+	// Use gog to get calendar events (UTC format with Z suffix)
+	from := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	to := time.Now().Add(30 * time.Minute).UTC().Format("2006-01-02T15:04:05Z")
 
 	cmd := exec.Command("gog", "calendar", "events",
 		"--from", from,
@@ -120,12 +140,12 @@ func (s *CalendarScheduler) getUpcomingEvents() ([]CalendarEvent, error) {
 		return s.getEventsViaOpenClaw()
 	}
 
-	var events []CalendarEvent
-	if err := json.Unmarshal(output, &events); err != nil {
+	var response GogCalendarResponse
+	if err := json.Unmarshal(output, &response); err != nil {
 		return nil, err
 	}
 
-	return events, nil
+	return response.Events, nil
 }
 
 func (s *CalendarScheduler) getEventsViaOpenClaw() ([]CalendarEvent, error) {
@@ -180,7 +200,7 @@ func formatReminderMessage(event CalendarEvent, minutesBefore int) string {
 	parts = append(parts, fmt.Sprintf("Напоминание о встрече через %d минут:", minutesBefore))
 	parts = append(parts, "")
 	parts = append(parts, fmt.Sprintf("**%s**", event.Summary))
-	parts = append(parts, fmt.Sprintf("Время: %s - %s", event.Start.Format("15:04"), event.End.Format("15:04")))
+	parts = append(parts, fmt.Sprintf("Время: %s - %s", event.StartTime().Format("15:04"), event.EndTime().Format("15:04")))
 
 	if event.Location != "" {
 		parts = append(parts, fmt.Sprintf("Место: %s", event.Location))

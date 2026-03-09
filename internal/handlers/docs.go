@@ -233,6 +233,60 @@ const pageTemplate = `<!DOCTYPE html>
             box-shadow: 0 0 8px var(--jarvis-blue);
         }
 
+        .health-btn {
+            width: 100%;
+            text-align: left;
+            cursor: pointer;
+            background: none;
+            font-family: inherit;
+            font-size: inherit;
+        }
+
+        .health-btn:hover {
+            background: rgba(0, 212, 255, 0.05);
+        }
+
+        .health-details {
+            margin-top: 10px;
+            font-size: 0.75em;
+            padding: 8px 10px;
+            background: var(--jarvis-surface);
+            border-radius: 6px;
+            display: none;
+        }
+
+        .health-details.show {
+            display: block;
+        }
+
+        .health-details .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 3px 0;
+            border-bottom: 1px solid var(--jarvis-border);
+        }
+
+        .health-details .detail-row:last-child {
+            border-bottom: none;
+        }
+
+        .health-details .label {
+            color: var(--jarvis-text-dim);
+        }
+
+        .health-details .value {
+            color: var(--jarvis-blue);
+        }
+
+        .status-dot.checking {
+            background: var(--jarvis-orange);
+            animation: pulse 0.5s ease-in-out infinite;
+        }
+
+        .status-dot.error {
+            background: #ff4444;
+        }
+
         .sidebar-footer {
             padding: 15px 20px;
             border-top: 1px solid var(--jarvis-border);
@@ -581,16 +635,19 @@ const pageTemplate = `<!DOCTYPE html>
                 <div class="nav-section-title">System</div>
                 <ul class="nav-list">
                     <li class="nav-item">
-                        <a href="/health" class="nav-link">Health Check</a>
+                        <button class="nav-link health-btn" onclick="checkHealth()">
+                            Health Check
+                        </button>
                     </li>
                 </ul>
             </div>
         </nav>
         <div class="sidebar-footer">
-            <div class="status-indicator">
-                <span class="status-dot"></span>
-                System Online
+            <div class="status-indicator" id="health-status">
+                <span class="status-dot" id="status-dot"></span>
+                <span id="status-text">System Online</span>
             </div>
+            <div id="health-details" class="health-details"></div>
         </div>
     </aside>
 
@@ -616,13 +673,53 @@ const pageTemplate = `<!DOCTYPE html>
 
     <script>
         // Close sidebar on mobile when clicking a link
-        document.querySelectorAll('.nav-link').forEach(link => {
+        document.querySelectorAll('.nav-link:not(.health-btn)').forEach(link => {
             link.addEventListener('click', () => {
                 if (window.innerWidth <= 900) {
                     document.querySelector('.sidebar').classList.remove('open');
                 }
             });
         });
+
+        // Health check function
+        async function checkHealth() {
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
+            const details = document.getElementById('health-details');
+
+            dot.className = 'status-dot checking';
+            text.textContent = 'Checking...';
+            details.classList.remove('show');
+
+            try {
+                const start = performance.now();
+                const res = await fetch('/health');
+                const latency = Math.round(performance.now() - start);
+                const data = await res.json();
+
+                if (res.ok && data.status === 'ok') {
+                    dot.className = 'status-dot';
+                    dot.style.background = '#00ff88';
+                    text.textContent = 'Online';
+
+                    details.innerHTML =
+                        '<div class="detail-row"><span class="label">Status</span><span class="value">OK</span></div>' +
+                        '<div class="detail-row"><span class="label">Latency</span><span class="value">' + latency + 'ms</span></div>' +
+                        '<div class="detail-row"><span class="label">Time</span><span class="value">' + new Date().toLocaleTimeString() + '</span></div>';
+                    details.classList.add('show');
+                } else {
+                    throw new Error('Unhealthy');
+                }
+            } catch (e) {
+                dot.className = 'status-dot error';
+                text.textContent = 'Error';
+                details.innerHTML = '<div class="detail-row"><span class="label">Error</span><span class="value" style="color:#ff4444">' + e.message + '</span></div>';
+                details.classList.add('show');
+            }
+        }
+
+        // Auto-check on load
+        checkHealth();
     </script>
 </body>
 </html>`
