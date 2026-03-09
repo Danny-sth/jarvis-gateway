@@ -1,10 +1,15 @@
 package handlers
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"strings"
 
 	"jarvis-gateway/internal/config"
 	"jarvis-gateway/internal/openclaw"
@@ -43,12 +48,28 @@ type GitHubUser struct {
 
 func GitHub(cfg *config.Config) http.HandlerFunc {
 	client := openclaw.NewClient(cfg)
+	secret := cfg.Tokens["github"]
 
 	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read body", http.StatusBadRequest)
+			return
+		}
+
+		// Verify signature if secret is configured
+		if secret != "" {
+			signature := r.Header.Get("X-Hub-Signature-256")
+			if !verifyGitHubSignature(body, signature, secret) {
+				http.Error(w, "Invalid signature", http.StatusUnauthorized)
+				return
+			}
+		}
+
 		eventType := r.Header.Get("X-GitHub-Event")
 
 		var webhook GitHubWebhook
-		if err := json.NewDecoder(r.Body).Decode(&webhook); err != nil {
+		if err := json.Unmarshal(body, &webhook); err != nil {
 			http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -105,4 +126,26 @@ func formatGitHubMessage(eventType string, webhook GitHubWebhook) string {
 	}
 
 	return ""
+}
+
+func verifyGitHubSignature(body []byte, signature, secret string) bool {
+	if signature == "" {
+		return false
+	}
+
+	// Signature format: sha256=<hex>
+	if !strings.HasPrefix(signature, "sha256=") {
+		return false
+	}
+
+	sig, err := hex.DecodeString(strings.TrimPrefix(signature, "sha256="))
+	if err != nil {
+		return false
+	}
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	expected := mac.Sum(nil)
+
+	return hmac.Equal(sig, expected)
 }

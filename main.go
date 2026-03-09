@@ -30,7 +30,7 @@ func main() {
 	// Webhook endpoints
 	mux.HandleFunc("POST /api/calendar", middleware.Auth(cfg, handlers.Calendar(cfg)))
 	mux.HandleFunc("POST /api/gmail", middleware.Auth(cfg, handlers.Gmail(cfg)))
-	mux.HandleFunc("POST /api/github", middleware.Auth(cfg, handlers.GitHub(cfg)))
+	mux.HandleFunc("POST /api/github", handlers.GitHub(cfg)) // Uses HMAC signature verification
 	mux.HandleFunc("POST /api/custom", middleware.Auth(cfg, handlers.Custom(cfg)))
 
 	// Logging middleware
