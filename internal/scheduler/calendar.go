@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -208,9 +209,28 @@ func formatReminderMessage(event CalendarEvent, minutesBefore int) string {
 
 	if event.HangoutLink != "" {
 		parts = append(parts, fmt.Sprintf("Ссылка: %s", event.HangoutLink))
+	} else if link := extractMeetingLink(event.Description); link != "" {
+		parts = append(parts, fmt.Sprintf("Ссылка: %s", link))
 	}
 
 	return strings.Join(parts, "\n")
+}
+
+func extractMeetingLink(description string) string {
+	patterns := []string{
+		`https://meet\.google\.com/[a-z-]+`,
+		`https://[a-z0-9]+\.zoom\.us/j/\d+`,
+		`https://telemost\.yandex\.ru/j/\d+`,
+		`https://dion\.vc/[^\s"<>]+`,
+	}
+
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
+		if match := re.FindString(description); match != "" {
+			return match
+		}
+	}
+	return ""
 }
 
 func (s *CalendarScheduler) cleanupOldReminders() {
