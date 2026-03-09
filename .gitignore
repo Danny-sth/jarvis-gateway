@@ -1,0 +1,14 @@
+# Binaries
+jarvis-gateway
+*.exe
+
+# Config with secrets
+config.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
