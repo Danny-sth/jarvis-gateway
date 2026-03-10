@@ -11,11 +11,17 @@ type BasicAuthConfig struct {
 	Password string `json:"password"`
 }
 
+type OpenClawConfig struct {
+	GatewayURL string `json:"gateway_url"` // http://127.0.0.1:18789
+	Token      string `json:"token"`       // Gateway auth token
+	AgentID    string `json:"agent_id"`    // default: "main"
+}
+
 type Config struct {
 	Port           string            `json:"port"`
 	TelegramChatID string            `json:"telegram_chat_id"`
 	Tokens         map[string]string `json:"tokens"` // source -> token
-	OpenClawBin    string            `json:"openclaw_bin"`
+	OpenClaw       OpenClawConfig    `json:"openclaw"`
 	DocsPath       string            `json:"docs_path"`
 	BasicAuth      BasicAuthConfig   `json:"basic_auth"`
 }
@@ -24,8 +30,11 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Port:           "8082",
 		TelegramChatID: "764733417",
-		OpenClawBin:    "openclaw",
-		Tokens:         make(map[string]string),
+		OpenClaw: OpenClawConfig{
+			GatewayURL: "http://127.0.0.1:18789",
+			AgentID:    "main",
+		},
+		Tokens: make(map[string]string),
 	}
 
 	// Try to load from config file
@@ -51,8 +60,14 @@ func Load() (*Config, error) {
 	if chatID := os.Getenv("JARVIS_TELEGRAM_CHAT_ID"); chatID != "" {
 		cfg.TelegramChatID = chatID
 	}
-	if bin := os.Getenv("JARVIS_OPENCLAW_BIN"); bin != "" {
-		cfg.OpenClawBin = bin
+	if url := os.Getenv("OPENCLAW_GATEWAY_URL"); url != "" {
+		cfg.OpenClaw.GatewayURL = url
+	}
+	if token := os.Getenv("OPENCLAW_GATEWAY_TOKEN"); token != "" {
+		cfg.OpenClaw.Token = token
+	}
+	if agentID := os.Getenv("OPENCLAW_AGENT_ID"); agentID != "" {
+		cfg.OpenClaw.AgentID = agentID
 	}
 
 	// Token overrides: JARVIS_TOKEN_CALENDAR, JARVIS_TOKEN_GMAIL, etc.

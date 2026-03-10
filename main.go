@@ -33,6 +33,9 @@ func main() {
 	mux.HandleFunc("POST /api/github", handlers.GitHub(cfg)) // Uses HMAC signature verification
 	mux.HandleFunc("POST /api/custom", middleware.Auth(cfg, handlers.Custom(cfg)))
 
+	// Telegram webhook (no auth - Telegram sends updates directly)
+	mux.HandleFunc("POST /api/telegram/webhook", handlers.Telegram(cfg))
+
 	// Logging middleware
 	handler := middleware.Logger(mux)
 
