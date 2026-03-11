@@ -10,7 +10,7 @@ type Client interface {
 	Send(message, userID string) (string, error)
 }
 
-// NewClient creates a new OpenClaw client (WebSocket-based)
+// NewClient creates a new OpenClaw client (CLI-based for reliable delivery)
 func NewClient(cfg *config.Config) Client {
-	return NewWSClient(cfg)
+	return NewCLIClient(cfg)
 }

@@ -374,9 +374,16 @@ func (c *WSClient) Send(message, userID string) (string, error) {
 	// Generate unique idempotency key
 	idempotencyKey := fmt.Sprintf("%d-%d", time.Now().UnixNano(), c.reqID.Load())
 
+	// Parse userID format: "telegram:764733417" -> sessionKey "agent:main:telegram:direct:764733417"
+	sessionKey := fmt.Sprintf("agent:%s:%s", c.agentID, userID)
+	// Insert "direct:" before the peerId if format is channel:peerId
+	if parts := splitOnce(userID, ":"); len(parts) == 2 {
+		sessionKey = fmt.Sprintf("agent:%s:%s:direct:%s", c.agentID, parts[0], parts[1])
+	}
+
 	params := ChatSendParams{
 		IdempotencyKey: idempotencyKey,
-		SessionKey:     fmt.Sprintf("agent:%s:%s", c.agentID, userID),
+		SessionKey:     sessionKey,
 		Message:        message,
 		Deliver:        true,
 	}
@@ -406,4 +413,19 @@ func (c *WSClient) SendDirect(message, channel, target string) error {
 
 	_, err := c.call("message.send", params, 30*time.Second)
 	return err
+}
+
+// splitOnce splits string on first occurrence of sep
+func splitOnce(s, sep string) []string {
+	idx := -1
+	for i := 0; i < len(s); i++ {
+		if i+len(sep) <= len(s) && s[i:i+len(sep)] == sep {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return []string{s}
+	}
+	return []string{s[:idx], s[idx+len(sep):]}
 }
