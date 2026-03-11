@@ -752,8 +752,8 @@ func Docs(cfg *config.Config) http.HandlerFunc {
 		path = strings.TrimPrefix(path, "/")
 
 		if path == "" {
-			// List all docs
-			serveDocList(w, docs)
+			// Redirect to landing page
+			http.Redirect(w, r, "/docs/OpenClaw", http.StatusFound)
 			return
 		}
 

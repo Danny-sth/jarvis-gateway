@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 type BasicAuthConfig struct {
@@ -17,6 +18,20 @@ type OpenClawConfig struct {
 	AgentID    string `json:"agent_id"`    // default: "main"
 }
 
+type DatabaseConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	User     string `json:"user"`
+	Password string `json:"password"`
+	Name     string `json:"name"`
+}
+
+type VoiceConfig struct {
+	STTCommand     string `json:"stt_command"`      // Path to whisper-stt
+	TTSVoice       string `json:"tts_voice"`        // e.g., ru-RU-DmitryNeural
+	SessionTTLDays int    `json:"session_ttl_days"` // Mobile session TTL in days
+}
+
 type Config struct {
 	Port           string            `json:"port"`
 	TelegramChatID string            `json:"telegram_chat_id"`
@@ -24,6 +39,8 @@ type Config struct {
 	OpenClaw       OpenClawConfig    `json:"openclaw"`
 	DocsPath       string            `json:"docs_path"`
 	BasicAuth      BasicAuthConfig   `json:"basic_auth"`
+	Database       DatabaseConfig    `json:"database"`
+	Voice          VoiceConfig       `json:"voice"`
 }
 
 func Load() (*Config, error) {
@@ -35,6 +52,17 @@ func Load() (*Config, error) {
 			AgentID:    "main",
 		},
 		Tokens: make(map[string]string),
+		Database: DatabaseConfig{
+			Host: "localhost",
+			Port: 5433,
+			User: "jarvis",
+			Name: "jarvis",
+		},
+		Voice: VoiceConfig{
+			STTCommand:     "/usr/local/bin/whisper-stt",
+			TTSVoice:       "ru-RU-DmitryNeural",
+			SessionTTLDays: 30,
+		},
 	}
 
 	// Try to load from config file
@@ -70,8 +98,35 @@ func Load() (*Config, error) {
 		cfg.OpenClaw.AgentID = agentID
 	}
 
+	// Database env overrides
+	if host := os.Getenv("JARVIS_DB_HOST"); host != "" {
+		cfg.Database.Host = host
+	}
+	if port := os.Getenv("JARVIS_DB_PORT"); port != "" {
+		if p, err := strconv.Atoi(port); err == nil {
+			cfg.Database.Port = p
+		}
+	}
+	if user := os.Getenv("JARVIS_DB_USER"); user != "" {
+		cfg.Database.User = user
+	}
+	if pass := os.Getenv("JARVIS_DB_PASSWORD"); pass != "" {
+		cfg.Database.Password = pass
+	}
+	if name := os.Getenv("JARVIS_DB_NAME"); name != "" {
+		cfg.Database.Name = name
+	}
+
+	// Voice env overrides
+	if stt := os.Getenv("JARVIS_STT_COMMAND"); stt != "" {
+		cfg.Voice.STTCommand = stt
+	}
+	if tts := os.Getenv("JARVIS_TTS_VOICE"); tts != "" {
+		cfg.Voice.TTSVoice = tts
+	}
+
 	// Token overrides: JARVIS_TOKEN_CALENDAR, JARVIS_TOKEN_GMAIL, etc.
-	tokenSources := []string{"calendar", "gmail", "github", "custom"}
+	tokenSources := []string{"calendar", "gmail", "github", "custom", "qr", "voice"}
 	for _, src := range tokenSources {
 		envKey := "JARVIS_TOKEN_" + src
 		if token := os.Getenv(envKey); token != "" {

@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"jarvis-gateway/internal/config"
+	"jarvis-gateway/internal/db"
 	"jarvis-gateway/internal/handlers"
 	"jarvis-gateway/internal/middleware"
 )
@@ -17,6 +18,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+
+	// Initialize database connection
+	dbClient, err := db.New(db.Config{
+		Host:     cfg.Database.Host,
+		Port:     cfg.Database.Port,
+		User:     cfg.Database.User,
+		Password: cfg.Database.Password,
+		Name:     cfg.Database.Name,
+	})
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer dbClient.Close()
 
 	mux := http.NewServeMux()
 
@@ -35,6 +49,13 @@ func main() {
 
 	// Telegram webhook (no auth - Telegram sends updates directly)
 	mux.HandleFunc("POST /api/telegram/webhook", handlers.Telegram(cfg))
+
+	// QR Auth endpoints for mobile app
+	mux.HandleFunc("POST /api/auth/qr/generate", middleware.Auth(cfg, handlers.QRGenerate(cfg, dbClient)))
+	mux.HandleFunc("POST /api/auth/qr/verify", handlers.QRVerify(cfg, dbClient)) // Public endpoint
+
+	// Voice endpoint for mobile app (protected with mobile token)
+	mux.HandleFunc("POST /api/voice", middleware.MobileAuth(dbClient, handlers.Voice(cfg, dbClient)))
 
 	// Logging middleware
 	handler := middleware.Logger(mux)
