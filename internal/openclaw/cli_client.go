@@ -31,10 +31,19 @@ func (c *CLIClient) SendMessage(message string) error {
 
 // Send sends a message to a specific user via agent with delivery
 func (c *CLIClient) Send(message, userID string) (string, error) {
-	// Build command: openclaw agent --to telegram:ID --message "..." --deliver
+	// Parse userID format: "telegram:764733417" -> channel=telegram, target=764733417
+	channel := "telegram"
+	target := userID
+	if idx := indexOf(userID, ":"); idx != -1 {
+		channel = userID[:idx]
+		target = userID[idx+1:]
+	}
+
+	// Build command: openclaw agent --channel telegram --to 764733417 --message "..." --deliver
 	args := []string{
 		"agent",
-		"--to", userID,
+		"--channel", channel,
+		"--to", target,
 		"--message", message,
 		"--deliver",
 	}
@@ -70,4 +79,14 @@ func (c *CLIClient) Send(message, userID string) (string, error) {
 	log.Printf("[openclaw-cli] Success, output length: %d", len(result))
 
 	return result, nil
+}
+
+// indexOf returns the index of sep in s, or -1 if not found
+func indexOf(s, sep string) int {
+	for i := 0; i <= len(s)-len(sep); i++ {
+		if s[i:i+len(sep)] == sep {
+			return i
+		}
+	}
+	return -1
 }
