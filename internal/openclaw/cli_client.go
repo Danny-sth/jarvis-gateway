@@ -81,6 +81,57 @@ func (c *CLIClient) Send(message, userID string) (string, error) {
 	return result, nil
 }
 
+// SendWithoutDeliver sends a message without --deliver flag
+func (c *CLIClient) SendWithoutDeliver(message, userID string) (string, error) {
+	// Parse userID format: "telegram:764733417" -> channel=telegram, target=764733417
+	channel := "telegram"
+	target := userID
+	if idx := indexOf(userID, ":"); idx != -1 {
+		channel = userID[:idx]
+		target = userID[idx+1:]
+	}
+
+	// Build command: openclaw agent --channel telegram --to 764733417 --message "..."
+	// Note: NO --deliver flag, we'll handle delivery ourselves
+	args := []string{
+		"agent",
+		"--channel", channel,
+		"--to", target,
+		"--message", message,
+	}
+
+	log.Printf("[openclaw-cli] Executing (no-deliver): openclaw %s", strings.Join(args, " "))
+
+	cmd := exec.Command("openclaw", args...)
+
+	done := make(chan error, 1)
+	var output []byte
+	var cmdErr error
+
+	go func() {
+		output, cmdErr = cmd.CombinedOutput()
+		done <- cmdErr
+	}()
+
+	select {
+	case <-time.After(c.timeout):
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
+		return "", fmt.Errorf("command timeout after %v", c.timeout)
+	case err := <-done:
+		if err != nil {
+			log.Printf("[openclaw-cli] Command error: %v, output: %s", err, string(output))
+			return "", fmt.Errorf("openclaw command failed: %w", err)
+		}
+	}
+
+	result := strings.TrimSpace(string(output))
+	log.Printf("[openclaw-cli] Success (no-deliver), output length: %d", len(result))
+
+	return result, nil
+}
+
 // indexOf returns the index of sep in s, or -1 if not found
 func indexOf(s, sep string) int {
 	for i := 0; i <= len(s)-len(sep); i++ {

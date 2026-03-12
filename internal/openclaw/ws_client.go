@@ -403,6 +403,34 @@ func (c *WSClient) Send(message, userID string) (string, error) {
 	return agentResp.Payload.Text, nil
 }
 
+// SendWithoutDeliver sends a message without delivery (for custom delivery handling)
+func (c *WSClient) SendWithoutDeliver(message, userID string) (string, error) {
+	idempotencyKey := fmt.Sprintf("%d-%d", time.Now().UnixNano(), c.reqID.Load())
+	sessionKey := fmt.Sprintf("agent:%s:%s", c.agentID, userID)
+	if parts := splitOnce(userID, ":"); len(parts) == 2 {
+		sessionKey = fmt.Sprintf("agent:%s:%s:direct:%s", c.agentID, parts[0], parts[1])
+	}
+
+	params := ChatSendParams{
+		IdempotencyKey: idempotencyKey,
+		SessionKey:     sessionKey,
+		Message:        message,
+		Deliver:        false, // No delivery, we handle it ourselves
+	}
+
+	resp, err := c.call("chat.send", params, 120*time.Second)
+	if err != nil {
+		return "", err
+	}
+
+	var agentResp AgentResponse
+	if err := json.Unmarshal(resp.Payload, &agentResp); err != nil {
+		return string(resp.Payload), nil
+	}
+
+	return agentResp.Payload.Text, nil
+}
+
 // SendDirect sends a message directly to a channel (bypassing agent)
 func (c *WSClient) SendDirect(message, channel, target string) error {
 	params := map[string]interface{}{
