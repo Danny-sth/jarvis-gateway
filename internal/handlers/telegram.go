@@ -2,8 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"jarvis-gateway/internal/config"
 	"jarvis-gateway/internal/openclaw"
@@ -16,13 +22,13 @@ type TelegramUpdate struct {
 }
 
 type TelegramMessage struct {
-	MessageID int           `json:"message_id"`
-	From      *TelegramUser `json:"from,omitempty"`
-	Chat      *TelegramChat `json:"chat"`
-	Text      string        `json:"text,omitempty"`
-	Voice     *TelegramVoice `json:"voice,omitempty"`
-	Audio     *TelegramAudio `json:"audio,omitempty"`
-	Photo     []TelegramPhoto `json:"photo,omitempty"`
+	MessageID int               `json:"message_id"`
+	From      *TelegramUser     `json:"from,omitempty"`
+	Chat      *TelegramChat     `json:"chat"`
+	Text      string            `json:"text,omitempty"`
+	Voice     *TelegramVoice    `json:"voice,omitempty"`
+	Audio     *TelegramAudio    `json:"audio,omitempty"`
+	Photo     []TelegramPhoto   `json:"photo,omitempty"`
 	Document  *TelegramDocument `json:"document,omitempty"`
 }
 
@@ -44,10 +50,11 @@ type TelegramChat struct {
 }
 
 type TelegramVoice struct {
-	FileID   string `json:"file_id"`
-	Duration int    `json:"duration"`
-	MimeType string `json:"mime_type,omitempty"`
-	FileSize int    `json:"file_size,omitempty"`
+	FileID       string `json:"file_id"`
+	FileUniqueID string `json:"file_unique_id"`
+	Duration     int    `json:"duration"`
+	MimeType     string `json:"mime_type,omitempty"`
+	FileSize     int    `json:"file_size,omitempty"`
 }
 
 type TelegramAudio struct {
@@ -70,6 +77,15 @@ type TelegramDocument struct {
 	FileName string `json:"file_name,omitempty"`
 	MimeType string `json:"mime_type,omitempty"`
 	FileSize int    `json:"file_size,omitempty"`
+}
+
+// TelegramFileResponse is the response from getFile API
+type TelegramFileResponse struct {
+	OK     bool `json:"ok"`
+	Result struct {
+		FileID   string `json:"file_id"`
+		FilePath string `json:"file_path"`
+	} `json:"result"`
 }
 
 // Telegram creates a handler for Telegram webhook
@@ -101,11 +117,24 @@ func Telegram(cfg *config.Config) http.HandlerFunc {
 		// Get message text
 		text := msg.Text
 		if text == "" {
-			// Handle voice/audio/photo with placeholder
+			// Handle voice message with STT
 			if msg.Voice != nil {
-				text = "[Voice message]"
+				transcribed, err := transcribeVoice(cfg, msg.Voice.FileID)
+				if err != nil {
+					log.Printf("[telegram] STT failed: %v", err)
+					text = "[Voice message - STT failed]"
+				} else {
+					text = transcribed
+					log.Printf("[telegram] STT result: %s", truncate(text, 100))
+				}
 			} else if msg.Audio != nil {
-				text = "[Audio file]"
+				transcribed, err := transcribeVoice(cfg, msg.Audio.FileID)
+				if err != nil {
+					log.Printf("[telegram] STT failed for audio: %v", err)
+					text = "[Audio file - STT failed]"
+				} else {
+					text = transcribed
+				}
 			} else if len(msg.Photo) > 0 {
 				text = "[Photo]"
 			} else if msg.Document != nil {
@@ -138,6 +167,79 @@ func Telegram(cfg *config.Config) http.HandlerFunc {
 		// We just acknowledge the webhook
 		w.WriteHeader(http.StatusOK)
 	}
+}
+
+// transcribeVoice downloads a voice file from Telegram and runs STT
+func transcribeVoice(cfg *config.Config, fileID string) (string, error) {
+	botToken := cfg.Telegram.BotToken
+	if botToken == "" {
+		return "", fmt.Errorf("telegram bot token not configured")
+	}
+
+	// Step 1: Get file path from Telegram
+	getFileURL := fmt.Sprintf("https://api.telegram.org/bot%s/getFile?file_id=%s", botToken, fileID)
+	resp, err := http.Get(getFileURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to get file info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var fileResp TelegramFileResponse
+	if err := json.NewDecoder(resp.Body).Decode(&fileResp); err != nil {
+		return "", fmt.Errorf("failed to decode file response: %w", err)
+	}
+
+	if !fileResp.OK || fileResp.Result.FilePath == "" {
+		return "", fmt.Errorf("telegram API returned error or empty path")
+	}
+
+	// Step 2: Download the file
+	downloadURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", botToken, fileResp.Result.FilePath)
+	fileResp2, err := http.Get(downloadURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to download file: %w", err)
+	}
+	defer fileResp2.Body.Close()
+
+	// Save to temp file
+	ext := filepath.Ext(fileResp.Result.FilePath)
+	if ext == "" {
+		ext = ".ogg" // Telegram voice messages are OGG by default
+	}
+	tmpFile, err := os.CreateTemp("", "telegram_voice_*"+ext)
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	if _, err := io.Copy(tmpFile, fileResp2.Body); err != nil {
+		return "", fmt.Errorf("failed to save file: %w", err)
+	}
+	tmpFile.Close()
+
+	// Step 3: Run STT
+	sttCommand := cfg.Voice.STTCommand
+	if sttCommand == "" {
+		sttCommand = "/usr/local/bin/whisper-stt"
+	}
+
+	log.Printf("[telegram] Running STT: %s %s", sttCommand, tmpFile.Name())
+	cmd := exec.Command(sttCommand, tmpFile.Name())
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return "", fmt.Errorf("STT failed: %s", string(exitErr.Stderr))
+		}
+		return "", fmt.Errorf("STT command failed: %w", err)
+	}
+
+	result := strings.TrimSpace(string(output))
+	if result == "" {
+		return "", fmt.Errorf("STT returned empty result")
+	}
+
+	return result, nil
 }
 
 // formatTelegramUserID formats Telegram chat ID for OpenClaw session

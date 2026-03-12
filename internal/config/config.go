@@ -32,6 +32,10 @@ type VoiceConfig struct {
 	SessionTTLDays int    `json:"session_ttl_days"` // Mobile session TTL in days
 }
 
+type TelegramConfig struct {
+	BotToken string `json:"bot_token"` // Telegram bot token for downloading files
+}
+
 type Config struct {
 	Port           string            `json:"port"`
 	TelegramChatID string            `json:"telegram_chat_id"`
@@ -41,6 +45,7 @@ type Config struct {
 	BasicAuth      BasicAuthConfig   `json:"basic_auth"`
 	Database       DatabaseConfig    `json:"database"`
 	Voice          VoiceConfig       `json:"voice"`
+	Telegram       TelegramConfig    `json:"telegram"`
 }
 
 func Load() (*Config, error) {
@@ -123,6 +128,11 @@ func Load() (*Config, error) {
 	}
 	if tts := os.Getenv("JARVIS_TTS_VOICE"); tts != "" {
 		cfg.Voice.TTSVoice = tts
+	}
+
+	// Telegram env overrides
+	if botToken := os.Getenv("TELEGRAM_BOT_TOKEN"); botToken != "" {
+		cfg.Telegram.BotToken = botToken
 	}
 
 	// Token overrides: JARVIS_TOKEN_CALENDAR, JARVIS_TOKEN_GMAIL, etc.
