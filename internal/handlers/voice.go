@@ -148,3 +148,11 @@ func sendVoiceError(w http.ResponseWriter, message string, status int) {
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(VoiceErrorResponse{Error: message})
 }
+
+// truncate truncates string to max length
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
