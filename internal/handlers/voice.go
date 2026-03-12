@@ -112,7 +112,9 @@ func Voice(cfg *config.Config, dbClient *db.Client) http.HandlerFunc {
 		log.Printf("[voice] STT result: %q", truncate(text, 100))
 
 		// Step 2: OpenClaw - process message (without --deliver to avoid sending to Telegram)
-		response, err := client.SendWithoutDeliver(text, userID)
+		// Add mobile context so Jarvis knows the message is from the mobile app
+		messageWithContext := fmt.Sprintf("[📱 Mobile] %s", text)
+		response, err := client.SendWithoutDeliver(messageWithContext, userID)
 		if err != nil {
 			log.Printf("[voice] OpenClaw failed: %v", err)
 			sendVoiceError(w, "Agent processing failed", http.StatusInternalServerError)
