@@ -126,6 +126,12 @@ PostgreSQL `jarvis@localhost:5433/jarvis`:
 - `mobile_sessions` - сессии мобилок (30 дней)
 - `qr_auth_codes` - QR коды (5 минут)
 
+## VPS
+
+- Локация: Алматы, Казахстан
+- Провайдер: Timeweb
+- IP: 90.156.230.49
+
 ## Деплой
 
 ```bash
