@@ -174,14 +174,21 @@ func Telegram(cfg *config.Config) http.HandlerFunc {
 		// For voice messages, send text + voice response
 		if isVoice && response != "" {
 			go func() {
-				// Send text message first
-				if err := sendTelegramMessage(cfg, msg.Chat.ID, response); err != nil {
-					log.Printf("[telegram] Failed to send text: %v", err)
-				}
+				const maxCaptionLen = 1024
 
-				// Generate and send voice note
-				if err := sendTelegramVoice(cfg, msg.Chat.ID, response); err != nil {
-					log.Printf("[telegram] Failed to send voice: %v", err)
+				if len(response) <= maxCaptionLen {
+					// Short response: send voice with caption (single message)
+					if err := sendTelegramVoiceWithCaption(cfg, msg.Chat.ID, response, response); err != nil {
+						log.Printf("[telegram] Failed to send voice with caption: %v", err)
+					}
+				} else {
+					// Long response: send text first, then voice without caption
+					if err := sendTelegramMessage(cfg, msg.Chat.ID, response); err != nil {
+						log.Printf("[telegram] Failed to send text: %v", err)
+					}
+					if err := sendTelegramVoiceWithCaption(cfg, msg.Chat.ID, response, ""); err != nil {
+						log.Printf("[telegram] Failed to send voice: %v", err)
+					}
 				}
 			}()
 		}
@@ -302,8 +309,9 @@ func sendTelegramMessage(cfg *config.Config, chatID int64, text string) error {
 	return nil
 }
 
-// sendTelegramVoice generates TTS and sends voice note to Telegram
-func sendTelegramVoice(cfg *config.Config, chatID int64, text string) error {
+// sendTelegramVoiceWithCaption generates TTS and sends voice note to Telegram
+// If caption is provided and <= 1024 chars, it will be attached to the voice message
+func sendTelegramVoiceWithCaption(cfg *config.Config, chatID int64, text string, caption string) error {
 	botToken := cfg.Telegram.BotToken
 	if botToken == "" {
 		return fmt.Errorf("telegram bot token not configured")
@@ -351,6 +359,11 @@ func sendTelegramVoice(cfg *config.Config, chatID int64, text string) error {
 	writer := multipart.NewWriter(&buf)
 	writer.WriteField("chat_id", fmt.Sprintf("%d", chatID))
 
+	// Add caption if provided
+	if caption != "" {
+		writer.WriteField("caption", caption)
+	}
+
 	part, err := writer.CreateFormFile("voice", "voice.ogg")
 	if err != nil {
 		return err
@@ -369,7 +382,11 @@ func sendTelegramVoice(cfg *config.Config, chatID int64, text string) error {
 		return fmt.Errorf("telegram API error: %s", string(body))
 	}
 
-	log.Printf("[telegram] Sent voice note to %d (%d bytes)", chatID, len(oggData))
+	if caption != "" {
+		log.Printf("[telegram] Sent voice note with caption to %d (%d bytes)", chatID, len(oggData))
+	} else {
+		log.Printf("[telegram] Sent voice note to %d (%d bytes)", chatID, len(oggData))
+	}
 	return nil
 }
 
