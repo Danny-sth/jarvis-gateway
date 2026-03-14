@@ -76,7 +76,9 @@ edge-tts → MP3
 FFmpeg: MP3 → OGG Opus
        │
        ▼
-Telegram: текст + voice note
+Telegram sendVoice:
+  - <= 1024 chars: voice + caption (одно сообщение)
+  - > 1024 chars: text + voice (два сообщения)
 ```
 
 ## Mobile API Flow
