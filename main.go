@@ -107,6 +107,7 @@ func main() {
 	// Google OAuth endpoints
 	mux.HandleFunc("GET /api/auth/google/callback", handlers.GoogleOAuthCallback(oauthDeps))
 	mux.HandleFunc("GET /api/auth/google/link", middleware.Auth(cfg, handlers.GetOAuthLinkHandler(cfg)))
+	mux.HandleFunc("POST /api/oauth/google/initiate", middleware.Auth(cfg, handlers.InitiateOAuthHandler(oauthDeps)))
 
 	// Logging middleware
 	handler := middleware.Logger(mux)

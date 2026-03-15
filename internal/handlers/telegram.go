@@ -189,13 +189,6 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 		log.Printf("[telegram] Message from %s (chat %d): %s",
 			formatUserName(msg.From), msg.Chat.ID, truncateStr(text, 50))
 
-		// Handle commands
-		if strings.HasPrefix(text, "/connect_google") {
-			handleConnectGoogleCommand(deps, msg.Chat.ID, telegramID)
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
 		// Build chat options
 		var opts vtoroy.ChatOptions
 
@@ -509,32 +502,6 @@ func sendTelegramVoiceWithCaption(cfg *config.Config, chatID int64, text string,
 		log.Printf("[telegram] Sent voice note to %d (%d bytes)", chatID, len(oggData))
 	}
 	return nil
-}
-
-// handleConnectGoogleCommand handles the /connect_google command
-func handleConnectGoogleCommand(deps *TelegramDeps, chatID, userID int64) {
-	// Check if already connected
-	if deps.CredService != nil {
-		creds, err := deps.CredService.GetCredentials(userID, "google")
-		if err != nil {
-			log.Printf("[telegram] Error checking Google credentials: %v", err)
-		} else if creds != nil {
-			// Already connected
-			SendTelegramMessage(deps.Config, chatID, "Google аккаунт уже подключён! Если хочешь переподключить - сначала отключи текущий командой /disconnect_google")
-			return
-		}
-	}
-
-	// Generate OAuth URL
-	oauthURL, err := GenerateOAuthURL(deps.Config, userID, chatID)
-	if err != nil {
-		log.Printf("[telegram] Failed to generate OAuth URL: %v", err)
-		SendTelegramMessage(deps.Config, chatID, "Не удалось создать ссылку для авторизации. Попробуй позже.")
-		return
-	}
-
-	msg := fmt.Sprintf("Для подключения Google аккаунта перейди по ссылке:\n\n%s\n\nПосле авторизации я смогу работать с твоими:\n• Календарём\n• Почтой\n• Задачами\n• Google Drive", oauthURL)
-	SendTelegramMessage(deps.Config, chatID, msg)
 }
 
 func formatTelegramUserID(chatID int64) string {

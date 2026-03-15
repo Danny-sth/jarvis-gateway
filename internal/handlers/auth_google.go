@@ -311,3 +311,86 @@ func GetOAuthLinkHandler(cfg *config.Config) http.HandlerFunc {
 		json.NewEncoder(w).Encode(map[string]string{"url": oauthURL})
 	}
 }
+
+// InitiateOAuthRequest is the request body for InitiateOAuthHandler
+type InitiateOAuthRequest struct {
+	UserID string `json:"user_id"` // Telegram user ID as string (from Vtoroy)
+}
+
+// InitiateOAuthHandler handles OAuth initiation from Vtoroy agent
+// POST /api/oauth/google/initiate
+// Body: { "user_id": "764733417" }
+// Response: { "success": true, "message": "OAuth link sent to Telegram" }
+func InitiateOAuthHandler(deps *GoogleOAuthDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req InitiateOAuthRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Printf("[google-oauth] Failed to decode request: %v", err)
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if req.UserID == "" {
+			http.Error(w, "Missing user_id", http.StatusBadRequest)
+			return
+		}
+
+		userID, err := strconv.ParseInt(req.UserID, 10, 64)
+		if err != nil {
+			http.Error(w, "Invalid user_id format", http.StatusBadRequest)
+			return
+		}
+
+		// For Telegram, chatID is same as userID for private messages
+		chatID := userID
+
+		// Check if already connected
+		if deps.CredService != nil {
+			creds, err := deps.CredService.GetCredentials(userID, "google")
+			if err != nil {
+				log.Printf("[google-oauth] Error checking credentials: %v", err)
+			} else if creds != nil {
+				// Already connected
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success":   true,
+					"connected": true,
+					"message":   "Google аккаунт уже подключён",
+				})
+				return
+			}
+		}
+
+		// Generate OAuth URL
+		oauthURL, err := GenerateOAuthURL(deps.Config, userID, chatID)
+		if err != nil {
+			log.Printf("[google-oauth] Failed to generate OAuth URL: %v", err)
+			http.Error(w, "Failed to generate OAuth URL", http.StatusInternalServerError)
+			return
+		}
+
+		// Send OAuth link to user via Telegram
+		if deps.SendMessage != nil {
+			msg := fmt.Sprintf("Для подключения Google аккаунта перейди по ссылке:\n\n%s\n\nПосле авторизации я смогу работать с твоими:\n• Календарём\n• Почтой\n• Задачами\n• Google Drive", oauthURL)
+			if err := deps.SendMessage(chatID, msg); err != nil {
+				log.Printf("[google-oauth] Failed to send Telegram message: %v", err)
+				http.Error(w, "Failed to send OAuth link to Telegram", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		log.Printf("[google-oauth] Initiated OAuth for user %d", userID)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":   true,
+			"connected": false,
+			"message":   "OAuth link sent to Telegram",
+		})
+	}
+}
