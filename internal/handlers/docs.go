@@ -740,7 +740,7 @@ type PageData struct {
 func Docs(cfg *config.Config) http.HandlerFunc {
 	docsPath := cfg.DocsPath
 	if docsPath == "" {
-		docsPath = "/opt/obsidian-vault/Coding/OpenClaw"
+		docsPath = "/opt/obsidian-vault/Coding/vtoroy"
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -753,7 +753,7 @@ func Docs(cfg *config.Config) http.HandlerFunc {
 
 		if path == "" {
 			// Redirect to landing page
-			http.Redirect(w, r, "/docs/OpenClaw", http.StatusFound)
+			http.Redirect(w, r, "/docs/Vtoroy", http.StatusFound)
 			return
 		}
 
