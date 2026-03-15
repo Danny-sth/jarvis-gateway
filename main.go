@@ -50,6 +50,9 @@ func main() {
 	// Telegram webhook (no auth - Telegram sends updates directly)
 	mux.HandleFunc("POST /api/telegram/webhook", handlers.Telegram(cfg))
 
+	// Telegram send endpoint (for vtoroy scheduler, internal use)
+	mux.HandleFunc("POST /api/telegram/send", middleware.Auth(cfg, handlers.TelegramSend(cfg)))
+
 	// QR Auth endpoints for mobile app
 	mux.HandleFunc("POST /api/auth/qr/generate", middleware.Auth(cfg, handlers.QRGenerate(cfg, dbClient)))
 	mux.HandleFunc("POST /api/auth/qr/verify", handlers.QRVerify(cfg, dbClient)) // Public endpoint

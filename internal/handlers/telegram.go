@@ -416,3 +416,66 @@ func truncateStr(s string, maxLen int) string {
 	}
 	return s[:maxLen] + "..."
 }
+
+// TelegramSendRequest is the request body for /api/telegram/send
+type TelegramSendRequest struct {
+	ChatID int64  `json:"chat_id"`
+	Text   string `json:"text"`
+	Voice  bool   `json:"voice"` // If true, also send TTS voice note
+}
+
+// TelegramSend creates a handler for sending Telegram messages
+// Used by vtoroy scheduler for morning messages
+func TelegramSend(cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req TelegramSendRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Printf("[telegram/send] Failed to decode request: %v", err)
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if req.ChatID == 0 || req.Text == "" {
+			http.Error(w, "chat_id and text required", http.StatusBadRequest)
+			return
+		}
+
+		log.Printf("[telegram/send] Sending to %d: %s", req.ChatID, truncateStr(req.Text, 50))
+
+		if req.Voice {
+			// Voice + text response (same logic as voice input response)
+			const maxCaptionLen = 1024
+
+			if len(req.Text) <= maxCaptionLen {
+				// Short: voice with caption
+				if err := sendTelegramVoiceWithCaption(cfg, req.ChatID, req.Text, req.Text); err != nil {
+					log.Printf("[telegram/send] Failed to send voice with caption: %v", err)
+					http.Error(w, "Failed to send voice", http.StatusInternalServerError)
+					return
+				}
+			} else {
+				// Long: text first, then voice without caption
+				if err := sendTelegramMessage(cfg, req.ChatID, req.Text); err != nil {
+					log.Printf("[telegram/send] Failed to send text: %v", err)
+					http.Error(w, "Failed to send text", http.StatusInternalServerError)
+					return
+				}
+				if err := sendTelegramVoiceWithCaption(cfg, req.ChatID, req.Text, ""); err != nil {
+					log.Printf("[telegram/send] Failed to send voice: %v", err)
+					http.Error(w, "Failed to send voice", http.StatusInternalServerError)
+					return
+				}
+			}
+		} else {
+			// Text only
+			if err := sendTelegramMessage(cfg, req.ChatID, req.Text); err != nil {
+				log.Printf("[telegram/send] Failed to send text: %v", err)
+				http.Error(w, "Failed to send text", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}
+}
