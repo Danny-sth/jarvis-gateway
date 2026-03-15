@@ -30,6 +30,12 @@ type TelegramConfig struct {
 	BotToken string `json:"bot_token"` // Telegram bot token for downloading files
 }
 
+type GoogleOAuthConfig struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	RedirectURI  string `json:"redirect_uri"`
+}
+
 type Config struct {
 	Port           string            `json:"port"`
 	TelegramChatID string            `json:"telegram_chat_id"`
@@ -37,9 +43,10 @@ type Config struct {
 	VtoroyURL      string            `json:"vtoroy_url"` // http://localhost:8081
 	DocsPath       string            `json:"docs_path"`
 	BasicAuth      BasicAuthConfig   `json:"basic_auth"`
-	Database       DatabaseConfig    `json:"database"`
-	Voice          VoiceConfig       `json:"voice"`
-	Telegram       TelegramConfig    `json:"telegram"`
+	Database    DatabaseConfig    `json:"database"`
+	Voice       VoiceConfig       `json:"voice"`
+	Telegram    TelegramConfig    `json:"telegram"`
+	GoogleOAuth GoogleOAuthConfig `json:"google_oauth"`
 }
 
 func Load() (*Config, error) {
@@ -127,6 +134,17 @@ func Load() (*Config, error) {
 		if token := os.Getenv(envKey); token != "" {
 			cfg.Tokens[src] = token
 		}
+	}
+
+	// Google OAuth env overrides
+	if clientID := os.Getenv("GOOGLE_CLIENT_ID"); clientID != "" {
+		cfg.GoogleOAuth.ClientID = clientID
+	}
+	if clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET"); clientSecret != "" {
+		cfg.GoogleOAuth.ClientSecret = clientSecret
+	}
+	if redirectURI := os.Getenv("GOOGLE_REDIRECT_URI"); redirectURI != "" {
+		cfg.GoogleOAuth.RedirectURI = redirectURI
 	}
 
 	return cfg, nil

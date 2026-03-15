@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"jarvis-gateway/internal/config"
+	"jarvis-gateway/internal/credentials"
 	"jarvis-gateway/internal/db"
 	"jarvis-gateway/internal/handlers"
 	"jarvis-gateway/internal/middleware"
@@ -54,6 +55,7 @@ func main() {
 	rbacService := rbac.NewService(dbClient.DB())
 	sessionService := session.NewService(dbClient.DB())
 	sessionAdapter := session.NewHandlerAdapter(sessionService)
+	credService := credentials.NewService(dbClient.DB())
 	vtoroyClient := vtoroy.NewClient(cfg)
 
 	// Create Telegram handler with full dependencies
@@ -62,6 +64,16 @@ func main() {
 		VtoroyClient:   vtoroyClient,
 		RBACService:    rbacService,
 		SessionService: sessionAdapter,
+		CredService:    credService,
+	}
+
+	// Google OAuth dependencies
+	oauthDeps := &handlers.GoogleOAuthDeps{
+		Config:      cfg,
+		CredService: credService,
+		SendMessage: func(chatID int64, text string) error {
+			return handlers.SendTelegramMessage(cfg, chatID, text)
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -91,6 +103,10 @@ func main() {
 
 	// Voice endpoint for mobile app (protected with mobile token)
 	mux.HandleFunc("POST /api/voice", middleware.MobileAuth(dbClient, handlers.Voice(cfg, dbClient)))
+
+	// Google OAuth endpoints
+	mux.HandleFunc("GET /api/auth/google/callback", handlers.GoogleOAuthCallback(oauthDeps))
+	mux.HandleFunc("GET /api/auth/google/link", middleware.Auth(cfg, handlers.GetOAuthLinkHandler(cfg)))
 
 	// Logging middleware
 	handler := middleware.Logger(mux)

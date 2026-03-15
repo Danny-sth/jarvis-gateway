@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"jarvis-gateway/internal/config"
+	"jarvis-gateway/internal/credentials"
 	"jarvis-gateway/internal/session"
 	"jarvis-gateway/internal/vtoroy"
 )
@@ -96,6 +97,7 @@ type TelegramDeps struct {
 	VtoroyClient   *vtoroy.Client
 	RBACService    RBACServiceInterface
 	SessionService SessionServiceInterface
+	CredService    CredentialServiceInterface
 }
 
 // RBACServiceInterface for RBAC operations
@@ -109,6 +111,12 @@ type SessionServiceInterface interface {
 	GetOrCreateConversationID(userID int64) (string, error)
 	GetRecentMessagesSimple(conversationID string, limit int) ([]session.HistoryMessage, error)
 	SaveMessageSimple(conversationID string, role, content string) error
+}
+
+// CredentialServiceInterface for user credentials operations
+type CredentialServiceInterface interface {
+	GetCredentials(userID int64, provider string) (*credentials.UserCredentials, error)
+	SaveCredentials(creds *credentials.UserCredentials) error
 }
 
 // Telegram creates a handler for Telegram webhook (legacy, without RBAC)
@@ -181,6 +189,13 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 		log.Printf("[telegram] Message from %s (chat %d): %s",
 			formatUserName(msg.From), msg.Chat.ID, truncateStr(text, 50))
 
+		// Handle commands
+		if strings.HasPrefix(text, "/connect_google") {
+			handleConnectGoogleCommand(deps, msg.Chat.ID, telegramID)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		// Build chat options
 		var opts vtoroy.ChatOptions
 
@@ -234,6 +249,21 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 			}
 		}
 
+		// Get GWS credentials if available
+		if deps.CredService != nil {
+			creds, err := deps.CredService.GetCredentials(telegramID, "google")
+			if err != nil {
+				log.Printf("[telegram] Error fetching GWS credentials: %v", err)
+			} else if creds != nil {
+				opts.GWSCredentials = map[string]string{
+					"access_token":  creds.AccessToken,
+					"refresh_token": creds.RefreshToken,
+					"token_type":    creds.TokenType,
+				}
+				log.Printf("[telegram] User %d has GWS credentials", telegramID)
+			}
+		}
+
 		// Send to Vtoroy agent
 		response, err := deps.VtoroyClient.SendWithOptions(text, userID, opts)
 		if err != nil {
@@ -269,7 +299,7 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 					}
 				} else {
 					// Long response: send text first, then voice without caption
-					if err := sendTelegramMessage(deps.Config, msg.Chat.ID, response); err != nil {
+					if err := SendTelegramMessage(deps.Config, msg.Chat.ID, response); err != nil {
 						log.Printf("[telegram] Failed to send text: %v", err)
 					}
 					if err := sendTelegramVoiceWithCaption(deps.Config, msg.Chat.ID, response, ""); err != nil {
@@ -278,7 +308,7 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 				}
 			} else {
 				// Text input -> text response
-				if err := sendTelegramMessage(deps.Config, msg.Chat.ID, response); err != nil {
+				if err := SendTelegramMessage(deps.Config, msg.Chat.ID, response); err != nil {
 					log.Printf("[telegram] Failed to send text response: %v", err)
 				}
 			}
@@ -370,8 +400,8 @@ func transcribeVoice(cfg *config.Config, fileID string) (string, error) {
 	return result, nil
 }
 
-// sendTelegramMessage sends a text message to Telegram
-func sendTelegramMessage(cfg *config.Config, chatID int64, text string) error {
+// SendTelegramMessage sends a text message to Telegram (exported for use by other handlers)
+func SendTelegramMessage(cfg *config.Config, chatID int64, text string) error {
 	botToken := cfg.Telegram.BotToken
 	if botToken == "" {
 		return fmt.Errorf("telegram bot token not configured")
@@ -481,6 +511,32 @@ func sendTelegramVoiceWithCaption(cfg *config.Config, chatID int64, text string,
 	return nil
 }
 
+// handleConnectGoogleCommand handles the /connect_google command
+func handleConnectGoogleCommand(deps *TelegramDeps, chatID, userID int64) {
+	// Check if already connected
+	if deps.CredService != nil {
+		creds, err := deps.CredService.GetCredentials(userID, "google")
+		if err != nil {
+			log.Printf("[telegram] Error checking Google credentials: %v", err)
+		} else if creds != nil {
+			// Already connected
+			SendTelegramMessage(deps.Config, chatID, "Google аккаунт уже подключён! Если хочешь переподключить - сначала отключи текущий командой /disconnect_google")
+			return
+		}
+	}
+
+	// Generate OAuth URL
+	oauthURL, err := GenerateOAuthURL(deps.Config, userID, chatID)
+	if err != nil {
+		log.Printf("[telegram] Failed to generate OAuth URL: %v", err)
+		SendTelegramMessage(deps.Config, chatID, "Не удалось создать ссылку для авторизации. Попробуй позже.")
+		return
+	}
+
+	msg := fmt.Sprintf("Для подключения Google аккаунта перейди по ссылке:\n\n%s\n\nПосле авторизации я смогу работать с твоими:\n• Календарём\n• Почтой\n• Задачами\n• Google Drive", oauthURL)
+	SendTelegramMessage(deps.Config, chatID, msg)
+}
+
 func formatTelegramUserID(chatID int64) string {
 	// Just the numeric ID to match vtoroy's format
 	return fmt.Sprintf("%d", chatID)
@@ -545,7 +601,7 @@ func TelegramSend(cfg *config.Config) http.HandlerFunc {
 				}
 			} else {
 				// Long: text first, then voice without caption
-				if err := sendTelegramMessage(cfg, req.ChatID, req.Text); err != nil {
+				if err := SendTelegramMessage(cfg, req.ChatID, req.Text); err != nil {
 					log.Printf("[telegram/send] Failed to send text: %v", err)
 					http.Error(w, "Failed to send text", http.StatusInternalServerError)
 					return
@@ -558,7 +614,7 @@ func TelegramSend(cfg *config.Config) http.HandlerFunc {
 			}
 		} else {
 			// Text only
-			if err := sendTelegramMessage(cfg, req.ChatID, req.Text); err != nil {
+			if err := SendTelegramMessage(cfg, req.ChatID, req.Text); err != nil {
 				log.Printf("[telegram/send] Failed to send text: %v", err)
 				http.Error(w, "Failed to send text", http.StatusInternalServerError)
 				return
