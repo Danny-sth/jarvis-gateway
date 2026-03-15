@@ -151,18 +151,8 @@ func Telegram(cfg *config.Config) http.HandlerFunc {
 		log.Printf("[telegram] Message from %s (chat %d): %s",
 			formatUserName(msg.From), msg.Chat.ID, truncateStr(text, 50))
 
-		// Send to Vtoroy agent (without deliver for voice, we'll handle TTS ourselves)
-		var response string
-		var err error
-
-		if isVoice {
-			// For voice messages, don't use --deliver, we'll send text+voice ourselves
-			response, err = client.SendWithoutDeliver(text, userID)
-		} else {
-			// For text messages, use normal flow with --deliver
-			response, err = client.Send(text, userID)
-		}
-
+		// Send to Vtoroy agent
+		response, err := client.SendWithoutDeliver(text, userID)
 		if err != nil {
 			log.Printf("[telegram] Failed to send to agent: %v", err)
 			w.WriteHeader(http.StatusOK)
@@ -171,9 +161,15 @@ func Telegram(cfg *config.Config) http.HandlerFunc {
 
 		log.Printf("[telegram] Agent response: %s", truncateStr(response, 100))
 
-		// For voice messages, send text + voice response
-		if isVoice && response != "" {
-			go func() {
+		if response == "" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Send response back to Telegram
+		go func() {
+			if isVoice {
+				// Voice input -> voice + text response
 				const maxCaptionLen = 1024
 
 				if len(response) <= maxCaptionLen {
@@ -190,8 +186,13 @@ func Telegram(cfg *config.Config) http.HandlerFunc {
 						log.Printf("[telegram] Failed to send voice: %v", err)
 					}
 				}
-			}()
-		}
+			} else {
+				// Text input -> text response
+				if err := sendTelegramMessage(cfg, msg.Chat.ID, response); err != nil {
+					log.Printf("[telegram] Failed to send text response: %v", err)
+				}
+			}
+		}()
 
 		w.WriteHeader(http.StatusOK)
 	}
@@ -391,7 +392,8 @@ func sendTelegramVoiceWithCaption(cfg *config.Config, chatID int64, text string,
 }
 
 func formatTelegramUserID(chatID int64) string {
-	return fmt.Sprintf("telegram:%d", chatID)
+	// Just the numeric ID to match vtoroy's format
+	return fmt.Sprintf("%d", chatID)
 }
 
 func formatUserName(user *TelegramUser) string {
