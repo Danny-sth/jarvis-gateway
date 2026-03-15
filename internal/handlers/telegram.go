@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"jarvis-gateway/internal/config"
-	"jarvis-gateway/internal/openclaw"
+	"jarvis-gateway/internal/vtoroy"
 )
 
 // Telegram Update structures
@@ -91,7 +91,7 @@ type TelegramFileResponse struct {
 
 // Telegram creates a handler for Telegram webhook
 func Telegram(cfg *config.Config) http.HandlerFunc {
-	client := openclaw.NewClient(cfg)
+	client := vtoroy.NewClient(cfg)
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		var update TelegramUpdate
@@ -151,7 +151,7 @@ func Telegram(cfg *config.Config) http.HandlerFunc {
 		log.Printf("[telegram] Message from %s (chat %d): %s",
 			formatUserName(msg.From), msg.Chat.ID, truncateStr(text, 50))
 
-		// Send to OpenClaw agent (without --deliver, we'll handle delivery ourselves for voice)
+		// Send to Vtoroy agent (without deliver for voice, we'll handle TTS ourselves)
 		var response string
 		var err error
 

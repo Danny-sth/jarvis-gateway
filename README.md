@@ -1,6 +1,6 @@
 # JARVIS Webhook Gateway
 
-HTTP gateway для приёма webhooks и отправки уведомлений в Telegram через OpenClaw.
+HTTP gateway для приёма webhooks и голосового API. Отправляет уведомления через Vtoroy.
 
 ## Endpoints
 
@@ -9,10 +9,13 @@ HTTP gateway для приёма webhooks и отправки уведомлен
 | GET | /health | - | Healthcheck |
 | GET | /docs | BasicAuth | Документация (Obsidian → HTML) |
 | GET | /docs/{name} | BasicAuth | Конкретный документ |
+| POST | /api/telegram/webhook | - | Telegram (text + voice) |
 | POST | /api/calendar | Token | Google Calendar events |
 | POST | /api/gmail | Token | Gmail notifications |
-| POST | /api/github | Token | GitHub webhooks |
-| POST | /api/custom | Token | Custom webhooks |
+| POST | /api/github | HMAC | GitHub webhooks |
+| POST | /api/auth/qr/generate | Token | QR для мобилки |
+| POST | /api/auth/qr/verify | - | Верификация QR |
+| POST | /api/voice | Mobile Token | Голосовой endpoint |
 
 ## Сборка
 
@@ -28,14 +31,13 @@ go build -o jarvis-gateway .
 cp config.example.json config.json
 ```
 
-Или используйте переменные окружения:
+Переменные окружения:
 - `JARVIS_PORT` - порт (default: 8082)
 - `JARVIS_TELEGRAM_CHAT_ID` - Telegram chat ID
-- `JARVIS_OPENCLAW_BIN` - путь к openclaw binary
+- `VTOROY_URL` - URL Vtoroy API (default: http://localhost:8081)
 - `JARVIS_TOKEN_CALENDAR` - токен для calendar webhook
 - `JARVIS_TOKEN_GMAIL` - токен для gmail webhook
 - `JARVIS_TOKEN_GITHUB` - токен для github webhook
-- `JARVIS_TOKEN_CUSTOM` - токен для custom webhook
 
 ## Запуск
 
@@ -62,16 +64,13 @@ curl -X POST https://on-za-menya.online/api/calendar \
   }'
 ```
 
-### Custom Webhook
+### Voice API
 
 ```bash
-curl -X POST https://on-za-menya.online/api/custom \
-  -H "Authorization: Bearer YOUR_TOKEN" \
+curl -X POST https://on-za-menya.online/api/voice \
+  -H "Authorization: Bearer MOB_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "message": "Hello from webhook!",
-    "source": "my-service"
-  }'
+  -d '{"audio": "base64_wav_data"}'
 ```
 
 ## Systemd
@@ -81,23 +80,6 @@ sudo cp jarvis-gateway.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable jarvis-gateway
 sudo systemctl start jarvis-gateway
-```
-
-## Calendar Scheduler
-
-Встроенный планировщик проверяет календарь каждые 5 минут и отправляет напоминания за 15 минут до события.
-
-Конфиг:
-```json
-{
-  "openclaw_bin": "/usr/bin/openclaw",
-  "telegram_chat_id": "764733417"
-}
-```
-
-Логи:
-```bash
-journalctl -u jarvis-gateway | grep "Calendar"
 ```
 
 ## Authentication
@@ -125,21 +107,13 @@ Webhook endpoints требуют токен в заголовке:
 Authorization: Bearer YOUR_TOKEN
 ```
 
-или
-
-```
-X-Webhook-Token: YOUR_TOKEN
-```
-
 ## Documentation
 
 Endpoint `/docs` отдаёт документацию из Obsidian vault в HTML формате.
-Файлы читаются динамически при каждом запросе (изменения отражаются сразу).
+Файлы читаются динамически при каждом запросе.
 Защищён BasicAuth.
 
-Конфиг:
-```json
-{
-  "docs_path": "/opt/obsidian-vault/Coding/OpenClaw"
-}
-```
+## Связанные системы
+
+- **Vtoroy** - AI agent (localhost:8081)
+- **PostgreSQL** - сессии и QR коды

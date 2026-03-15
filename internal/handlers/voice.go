@@ -9,13 +9,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 
 	"jarvis-gateway/internal/config"
 	"jarvis-gateway/internal/db"
-	"jarvis-gateway/internal/openclaw"
 	"jarvis-gateway/internal/voice"
+	"jarvis-gateway/internal/vtoroy"
 )
 
 // VoiceResponse represents the voice endpoint response
@@ -29,9 +30,9 @@ type VoiceErrorResponse struct {
 	Error string `json:"error"`
 }
 
-// Voice handles voice message processing: WAV -> STT -> OpenClaw -> TTS -> OGG
+// Voice handles voice message processing: WAV -> STT -> Vtoroy -> TTS -> OGG
 func Voice(cfg *config.Config, dbClient *db.Client) http.HandlerFunc {
-	client := openclaw.NewClient(cfg)
+	client := vtoroy.NewClient(cfg)
 
 	sttCfg := voice.STTConfig{
 		Command: cfg.Voice.STTCommand,
@@ -111,15 +112,18 @@ func Voice(cfg *config.Config, dbClient *db.Client) http.HandlerFunc {
 
 		log.Printf("[voice] STT result: %q", truncate(text, 100))
 
-		// Step 2: OpenClaw - process message (without --deliver to avoid sending to Telegram)
+		// Step 2: Vtoroy - process message
 		// Add context so Jarvis knows this is from the mobile app
 		messageWithContext := fmt.Sprintf("[Канал: мобильное приложение Jarvis на телефоне пользователя]\n\n%s", text)
 		response, err := client.SendWithoutDeliver(messageWithContext, userID)
 		if err != nil {
-			log.Printf("[voice] OpenClaw failed: %v", err)
+			log.Printf("[voice] Vtoroy failed: %v", err)
 			sendVoiceError(w, "Agent processing failed", http.StatusInternalServerError)
 			return
 		}
+
+		// Clean debug output from agent response
+		response = cleanAgentResponse(response)
 
 		log.Printf("[voice] Agent response: %q", truncate(response, 100))
 
@@ -157,4 +161,39 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// cleanAgentResponse removes debug output lines from agent response
+// Filters out lines starting with known debug prefixes
+func cleanAgentResponse(response string) string {
+	debugPrefixes := []string{
+		"[jarvis-memory]",
+		"[memory]",
+		"[plugin]",
+		"[debug]",
+		"[DEBUG]",
+	}
+
+	lines := strings.Split(response, "\n")
+	var cleaned []string
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		isDebug := false
+		for _, prefix := range debugPrefixes {
+			if strings.HasPrefix(trimmed, prefix) {
+				isDebug = true
+				break
+			}
+		}
+		if !isDebug {
+			cleaned = append(cleaned, line)
+		}
+	}
+
+	result := strings.Join(cleaned, "\n")
+	// Trim leading/trailing whitespace that may remain after removing debug lines
+	result = strings.TrimSpace(result)
+
+	return result
 }

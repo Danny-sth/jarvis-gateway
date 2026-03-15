@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"jarvis-gateway/internal/config"
-	"jarvis-gateway/internal/openclaw"
+	"jarvis-gateway/internal/vtoroy"
 )
 
 type CalendarEvent struct {
@@ -27,7 +27,7 @@ type CalendarWebhook struct {
 }
 
 func Calendar(cfg *config.Config) http.HandlerFunc {
-	client := openclaw.NewClient(cfg)
+	client := vtoroy.NewClient(cfg)
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		var webhook CalendarWebhook

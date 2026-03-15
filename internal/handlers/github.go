@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"jarvis-gateway/internal/config"
-	"jarvis-gateway/internal/openclaw"
+	"jarvis-gateway/internal/vtoroy"
 )
 
 type GitHubWebhook struct {
@@ -47,7 +47,7 @@ type GitHubUser struct {
 }
 
 func GitHub(cfg *config.Config) http.HandlerFunc {
-	client := openclaw.NewClient(cfg)
+	client := vtoroy.NewClient(cfg)
 	secret := cfg.Tokens["github"]
 
 	return func(w http.ResponseWriter, r *http.Request) {

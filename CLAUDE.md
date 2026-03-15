@@ -33,8 +33,8 @@ HTTP gateway для webhooks и голосового API. Go сервис.
         │                      │                      │
         ▼                      ▼                      ▼
 ┌───────────────┐    ┌───────────────┐    ┌───────────────┐
-│  STT/TTS      │    │  PostgreSQL   │    │   OpenClaw    │
-│ whisper/edge  │    │   :5433       │    │   CLI/WS      │
+│  STT/TTS      │    │  PostgreSQL   │    │   Vtoroy      │
+│ whisper/edge  │    │   :5433       │    │   :8081       │
 └───────────────┘    └───────────────┘    └───────────────┘
 ```
 
@@ -67,7 +67,7 @@ FFmpeg: OGA → WAV (16kHz mono)
 whisper-stt → текст
        │
        ▼
-OpenClaw agent (без --deliver)
+Vtoroy /api/chat → ответ
        │
        ▼
 edge-tts → MP3
@@ -93,7 +93,7 @@ QR scan (/link в Telegram)
 /api/voice + Bearer mob_token
        │
        ▼
-WAV → STT → OpenClaw → TTS → OGG (base64)
+WAV → STT → Vtoroy → TTS → OGG (base64)
 ```
 
 ## Структура проекта
@@ -109,7 +109,7 @@ internal/
 │   ├── github.go     # GitHub webhooks
 │   └── ...
 ├── middleware/   # Auth middleware
-├── openclaw/     # OpenClaw client (CLI + WS)
+├── vtoroy/       # Vtoroy HTTP client
 └── voice/        # STT/TTS wrappers
 ```
 
@@ -119,6 +119,7 @@ Environment:
 - `TELEGRAM_BOT_TOKEN` - для скачивания voice
 - `JARVIS_DB_*` - PostgreSQL
 - `JARVIS_TOKEN_*` - токены для webhooks
+- `VTOROY_URL` - URL vtoroy API (default: http://localhost:8081)
 
 ## База данных
 
@@ -145,6 +146,6 @@ ssh root@90.156.230.49 "systemctl restart jarvis-gateway"
 
 ## Связанные системы
 
-- **OpenClaw** - AI agent (localhost:18789)
-- **jarvis-memory** - долгосрочная память (pgvector)
+- **Vtoroy** - AI agent (localhost:8081, /api/chat)
+- **PostgreSQL** - сессии и QR коды (:5433)
 - **Obsidian** - документация (/opt/obsidian-vault)

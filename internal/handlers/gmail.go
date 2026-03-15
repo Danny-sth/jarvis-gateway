@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"jarvis-gateway/internal/config"
-	"jarvis-gateway/internal/openclaw"
+	"jarvis-gateway/internal/vtoroy"
 )
 
 type GmailWebhook struct {
@@ -19,7 +19,7 @@ type GmailWebhook struct {
 }
 
 func Gmail(cfg *config.Config) http.HandlerFunc {
-	client := openclaw.NewClient(cfg)
+	client := vtoroy.NewClient(cfg)
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		var webhook GmailWebhook
