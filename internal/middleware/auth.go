@@ -14,9 +14,9 @@ import (
 // BasicAuth middleware for protecting web pages with login/password
 func BasicAuth(cfg *config.Config, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// If no credentials configured, skip auth
+		// Credentials must be configured
 		if cfg.BasicAuth.Username == "" || cfg.BasicAuth.Password == "" {
-			next(w, r)
+			http.Error(w, "BasicAuth not configured", http.StatusInternalServerError)
 			return
 		}
 
@@ -54,8 +54,7 @@ func Auth(cfg *config.Config, next http.HandlerFunc) http.HandlerFunc {
 		// Get expected token for this source
 		expectedToken, exists := cfg.Tokens[source]
 		if !exists || expectedToken == "" {
-			// No token configured = no auth required (for development)
-			next(w, r)
+			http.Error(w, "Token not configured for source: "+source, http.StatusInternalServerError)
 			return
 		}
 

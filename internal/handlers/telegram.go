@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"jarvis-gateway/internal/config"
+	"jarvis-gateway/internal/session"
 	"jarvis-gateway/internal/vtoroy"
 )
 
@@ -89,10 +90,38 @@ type TelegramFileResponse struct {
 	} `json:"result"`
 }
 
-// Telegram creates a handler for Telegram webhook
+// TelegramDeps contains dependencies for the Telegram handler
+type TelegramDeps struct {
+	Config         *config.Config
+	VtoroyClient   *vtoroy.Client
+	RBACService    RBACServiceInterface
+	SessionService SessionServiceInterface
+}
+
+// RBACServiceInterface for RBAC operations
+type RBACServiceInterface interface {
+	GetAllowedTools(userID int64) ([]string, error)
+	EnsureUser(userID int64, username, firstName, lastName string) error
+}
+
+// SessionServiceInterface for conversation operations
+type SessionServiceInterface interface {
+	GetOrCreateConversationID(userID int64) (string, error)
+	GetRecentMessagesSimple(conversationID string, limit int) ([]session.HistoryMessage, error)
+	SaveMessageSimple(conversationID string, role, content string) error
+}
+
+// Telegram creates a handler for Telegram webhook (legacy, without RBAC)
 func Telegram(cfg *config.Config) http.HandlerFunc {
 	client := vtoroy.NewClient(cfg)
+	return TelegramWithDeps(&TelegramDeps{
+		Config:       cfg,
+		VtoroyClient: client,
+	})
+}
 
+// TelegramWithDeps creates a handler with full dependencies
+func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var update TelegramUpdate
 		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
@@ -120,7 +149,7 @@ func Telegram(cfg *config.Config) http.HandlerFunc {
 		text := msg.Text
 		if text == "" {
 			if msg.Voice != nil {
-				transcribed, err := transcribeVoice(cfg, msg.Voice.FileID)
+				transcribed, err := transcribeVoice(deps.Config, msg.Voice.FileID)
 				if err != nil {
 					log.Printf("[telegram] STT failed: %v", err)
 					text = "[Voice message - STT failed]"
@@ -129,7 +158,7 @@ func Telegram(cfg *config.Config) http.HandlerFunc {
 					log.Printf("[telegram] STT result: %s", truncateStr(text, 100))
 				}
 			} else if msg.Audio != nil {
-				transcribed, err := transcribeVoice(cfg, msg.Audio.FileID)
+				transcribed, err := transcribeVoice(deps.Config, msg.Audio.FileID)
 				if err != nil {
 					log.Printf("[telegram] STT failed for audio: %v", err)
 					text = "[Audio file - STT failed]"
@@ -147,12 +176,66 @@ func Telegram(cfg *config.Config) http.HandlerFunc {
 		}
 
 		userID := formatTelegramUserID(msg.Chat.ID)
+		telegramID := msg.Chat.ID
 
 		log.Printf("[telegram] Message from %s (chat %d): %s",
 			formatUserName(msg.From), msg.Chat.ID, truncateStr(text, 50))
 
+		// Build chat options
+		var opts vtoroy.ChatOptions
+
+		// Get allowed tools from RBAC if available
+		if deps.RBACService != nil {
+			// Ensure user exists
+			username := ""
+			firstName := ""
+			lastName := ""
+			if msg.From != nil {
+				username = msg.From.Username
+				firstName = msg.From.FirstName
+				lastName = msg.From.LastName
+			}
+			deps.RBACService.EnsureUser(telegramID, username, firstName, lastName)
+
+			tools, err := deps.RBACService.GetAllowedTools(telegramID)
+			if err != nil {
+				log.Printf("[telegram] RBAC error: %v", err)
+			} else {
+				opts.AllowedTools = tools
+				log.Printf("[telegram] User %d has %d allowed tools", telegramID, len(tools))
+			}
+		}
+
+		// Get conversation history if available
+		if deps.SessionService != nil {
+			convID, err := deps.SessionService.GetOrCreateConversationID(telegramID)
+			if err != nil {
+				log.Printf("[telegram] Session error: %v", err)
+			} else {
+				opts.ConversationID = convID
+
+				// Get recent messages for context
+				messages, err := deps.SessionService.GetRecentMessagesSimple(convID, 20)
+				if err != nil {
+					log.Printf("[telegram] History error: %v", err)
+				} else {
+					for _, m := range messages {
+						opts.History = append(opts.History, vtoroy.HistoryMessage{
+							Role:    m.Role,
+							Content: m.Content,
+						})
+					}
+				}
+
+				// Save user message
+				if err := deps.SessionService.SaveMessageSimple(convID, "user", text); err != nil {
+					log.Printf("[telegram] Failed to save user message: %v", err)
+				}
+			}
+		}
+
 		// Send to Vtoroy agent
-		response, err := client.SendWithoutDeliver(text, userID)
+		response, err := deps.VtoroyClient.SendWithOptions(text, userID, opts)
 		if err != nil {
 			log.Printf("[telegram] Failed to send to agent: %v", err)
 			w.WriteHeader(http.StatusOK)
@@ -160,6 +243,13 @@ func Telegram(cfg *config.Config) http.HandlerFunc {
 		}
 
 		log.Printf("[telegram] Agent response: %s", truncateStr(response, 100))
+
+		// Save assistant response
+		if deps.SessionService != nil && opts.ConversationID != "" && response != "" {
+			if err := deps.SessionService.SaveMessageSimple(opts.ConversationID, "assistant", response); err != nil {
+				log.Printf("[telegram] Failed to save assistant message: %v", err)
+			}
+		}
 
 		if response == "" {
 			w.WriteHeader(http.StatusOK)
@@ -174,21 +264,21 @@ func Telegram(cfg *config.Config) http.HandlerFunc {
 
 				if len(response) <= maxCaptionLen {
 					// Short response: send voice with caption (single message)
-					if err := sendTelegramVoiceWithCaption(cfg, msg.Chat.ID, response, response); err != nil {
+					if err := sendTelegramVoiceWithCaption(deps.Config, msg.Chat.ID, response, response); err != nil {
 						log.Printf("[telegram] Failed to send voice with caption: %v", err)
 					}
 				} else {
 					// Long response: send text first, then voice without caption
-					if err := sendTelegramMessage(cfg, msg.Chat.ID, response); err != nil {
+					if err := sendTelegramMessage(deps.Config, msg.Chat.ID, response); err != nil {
 						log.Printf("[telegram] Failed to send text: %v", err)
 					}
-					if err := sendTelegramVoiceWithCaption(cfg, msg.Chat.ID, response, ""); err != nil {
+					if err := sendTelegramVoiceWithCaption(deps.Config, msg.Chat.ID, response, ""); err != nil {
 						log.Printf("[telegram] Failed to send voice: %v", err)
 					}
 				}
 			} else {
 				// Text input -> text response
-				if err := sendTelegramMessage(cfg, msg.Chat.ID, response); err != nil {
+				if err := sendTelegramMessage(deps.Config, msg.Chat.ID, response); err != nil {
 					log.Printf("[telegram] Failed to send text response: %v", err)
 				}
 			}

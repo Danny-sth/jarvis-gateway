@@ -12,12 +12,6 @@ type BasicAuthConfig struct {
 	Password string `json:"password"`
 }
 
-type OpenClawConfig struct {
-	GatewayURL string `json:"gateway_url"` // http://127.0.0.1:18789
-	Token      string `json:"token"`       // Gateway auth token
-	AgentID    string `json:"agent_id"`    // default: "main"
-}
-
 type DatabaseConfig struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
@@ -40,7 +34,6 @@ type Config struct {
 	Port           string            `json:"port"`
 	TelegramChatID string            `json:"telegram_chat_id"`
 	Tokens         map[string]string `json:"tokens"` // source -> token
-	OpenClaw       OpenClawConfig    `json:"openclaw"`
 	VtoroyURL      string            `json:"vtoroy_url"` // http://localhost:8081
 	DocsPath       string            `json:"docs_path"`
 	BasicAuth      BasicAuthConfig   `json:"basic_auth"`
@@ -54,11 +47,7 @@ func Load() (*Config, error) {
 		Port:           "8082",
 		TelegramChatID: "764733417",
 		VtoroyURL:      "http://localhost:8081",
-		OpenClaw: OpenClawConfig{
-			GatewayURL: "http://127.0.0.1:18789",
-			AgentID:    "main",
-		},
-		Tokens: make(map[string]string),
+		Tokens:         make(map[string]string),
 		Database: DatabaseConfig{
 			Host: "localhost",
 			Port: 5433,
@@ -95,17 +84,8 @@ func Load() (*Config, error) {
 	if chatID := os.Getenv("JARVIS_TELEGRAM_CHAT_ID"); chatID != "" {
 		cfg.TelegramChatID = chatID
 	}
-	if url := os.Getenv("OPENCLAW_GATEWAY_URL"); url != "" {
-		cfg.OpenClaw.GatewayURL = url
-	}
 	if url := os.Getenv("VTOROY_URL"); url != "" {
 		cfg.VtoroyURL = url
-	}
-	if token := os.Getenv("OPENCLAW_GATEWAY_TOKEN"); token != "" {
-		cfg.OpenClaw.Token = token
-	}
-	if agentID := os.Getenv("OPENCLAW_AGENT_ID"); agentID != "" {
-		cfg.OpenClaw.AgentID = agentID
 	}
 
 	// Database env overrides

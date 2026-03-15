@@ -58,8 +58,8 @@ func Voice(cfg *config.Config, dbClient *db.Client) http.HandlerFunc {
 			return
 		}
 
-		userID := fmt.Sprintf("telegram:%d", telegramID)
-		log.Printf("[voice] Request from %s", userID)
+		userID := fmt.Sprintf("%d", telegramID)
+		log.Printf("[voice] Request from user %s", userID)
 
 		// Parse multipart form (max 20MB)
 		if err := r.ParseMultipartForm(20 << 20); err != nil {

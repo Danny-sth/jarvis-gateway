@@ -6,11 +6,15 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"jarvis-gateway/internal/config"
 	"jarvis-gateway/internal/db"
 	"jarvis-gateway/internal/handlers"
 	"jarvis-gateway/internal/middleware"
+	"jarvis-gateway/internal/rbac"
+	"jarvis-gateway/internal/session"
+	"jarvis-gateway/internal/vtoroy"
 )
 
 func main() {
@@ -32,6 +36,34 @@ func main() {
 	}
 	defer dbClient.Close()
 
+	// Background goroutine for session cleanup (every hour)
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			count, err := dbClient.DeleteExpiredSessions()
+			if err != nil {
+				log.Printf("[cleanup] Error deleting expired sessions: %v", err)
+			} else if count > 0 {
+				log.Printf("[cleanup] Deleted %d expired sessions", count)
+			}
+		}
+	}()
+
+	// Initialize services
+	rbacService := rbac.NewService(dbClient.DB())
+	sessionService := session.NewService(dbClient.DB())
+	sessionAdapter := session.NewHandlerAdapter(sessionService)
+	vtoroyClient := vtoroy.NewClient(cfg)
+
+	// Create Telegram handler with full dependencies
+	telegramDeps := &handlers.TelegramDeps{
+		Config:         cfg,
+		VtoroyClient:   vtoroyClient,
+		RBACService:    rbacService,
+		SessionService: sessionAdapter,
+	}
+
 	mux := http.NewServeMux()
 
 	// Health check
@@ -48,7 +80,7 @@ func main() {
 	mux.HandleFunc("POST /api/custom", middleware.Auth(cfg, handlers.Custom(cfg)))
 
 	// Telegram webhook (no auth - Telegram sends updates directly)
-	mux.HandleFunc("POST /api/telegram/webhook", handlers.Telegram(cfg))
+	mux.HandleFunc("POST /api/telegram/webhook", handlers.TelegramWithDeps(telegramDeps))
 
 	// Telegram send endpoint (for vtoroy scheduler, internal use)
 	mux.HandleFunc("POST /api/telegram/send", middleware.Auth(cfg, handlers.TelegramSend(cfg)))

@@ -1,7 +1,7 @@
 {
   "port": "8082",
   "telegram_chat_id": "764733417",
-  "openclaw_bin": "/usr/local/bin/openclaw",
+  "vtoroy_url": "http://localhost:8081",
   "tokens": {
     "calendar": "your-calendar-secret-token",
     "gmail": "your-gmail-secret-token",
