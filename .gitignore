@@ -1,0 +1,16 @@
+# Binaries
+vtoroy-gateway
+vtoroy-gateway-linux
+*.exe
+
+# Config with secrets
+config.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+jarvis-gateway-linux

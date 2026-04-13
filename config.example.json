@@ -1,0 +1,57 @@
+{
+  "port": "8082",
+  "telegram_chat_id": "your-telegram-chat-id",
+  "jarvis_url": "http://localhost:8081",
+  "gateway_host": "localhost:8082",
+  "use_async_queue": true,
+  "docs_path": "/var/www/docs",
+  "jwt_secret": "your-jwt-secret",
+  "owner_email": "your-email@example.com",
+  "basic_auth": {
+    "username": "admin",
+    "password": "your-password"
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5433,
+    "user": "jarvis",
+    "password": "your-db-password",
+    "name": "jarvis"
+  },
+  "voice": {
+    "stt_command": "/usr/local/bin/whisper-stt",
+    "tts_voice": "ru-RU-DmitryNeural",
+    "session_ttl_days": 30
+  },
+  "telegram": {
+    "bot_token": "your-telegram-bot-token"
+  },
+  "google_oauth": {
+    "client_id": "your-google-client-id",
+    "client_secret": "your-google-client-secret",
+    "redirect_uri": "https://your-domain/api/auth/google/callback"
+  },
+  "keycloak": {
+    "url": "http://localhost:8180",
+    "realm": "jarvis",
+    "client_id": "jarvis-gateway",
+    "client_secret": "your-keycloak-secret",
+    "enabled": false
+  },
+  "tls": {
+    "enabled": false,
+    "cert_file": "",
+    "key_file": "",
+    "domain": "your-domain.com",
+    "email": "admin@your-domain.com",
+    "data_dir": "/var/lib/jarvis-gateway/certs"
+  },
+  "tracing": {
+    "enabled": true,
+    "redis_url": "redis://localhost:6379",
+    "channel": "jarvis:traces"
+  },
+  "queue": {
+    "redis_url": "redis://localhost:6379"
+  }
+}
