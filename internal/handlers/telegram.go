@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -119,23 +120,34 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 			return
 		}
 
+		// Voice/audio data for queue (backend will transcribe)
+		var voiceData []byte
+		var voiceFileID string
+
 		if text == "" {
 			if msg.Voice != nil {
-				transcribed, err := transcribeVoice(deps.Config, msg.Voice.FileID)
+				voiceFileID = msg.Voice.FileID
+				// Download voice file for backend to transcribe
+				audioData, err := downloadVoiceFile(deps.Config, voiceFileID)
 				if err != nil {
-					log.Printf("[telegram] STT failed: %v", err)
-					text = "[Voice message - STT failed]"
+					log.Printf("[telegram] Failed to download voice: %v", err)
+					text = "[Voice message - download failed]"
 				} else {
-					text = transcribed
-					log.Printf("[telegram] STT result: %s", truncateStr(text, 100))
+					voiceData = audioData
+					text = "[Voice message - pending transcription]"
+					log.Printf("[telegram] Downloaded voice: %d bytes", len(audioData))
 				}
 			} else if msg.Audio != nil {
-				transcribed, err := transcribeVoice(deps.Config, msg.Audio.FileID)
+				voiceFileID = msg.Audio.FileID
+				// Download audio file for backend to transcribe
+				audioData, err := downloadVoiceFile(deps.Config, voiceFileID)
 				if err != nil {
-					log.Printf("[telegram] STT failed for audio: %v", err)
-					text = "[Audio file - STT failed]"
+					log.Printf("[telegram] Failed to download audio: %v", err)
+					text = "[Audio file - download failed]"
 				} else {
-					text = transcribed
+					voiceData = audioData
+					text = "[Audio file - pending transcription]"
+					log.Printf("[telegram] Downloaded audio: %d bytes", len(audioData))
 				}
 			} else if len(msg.Photo) > 0 {
 				text = "[Photo]"
@@ -234,20 +246,27 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 			}
 		}
 
+		// Build payload
+		payload := map[string]interface{}{
+			"message":          text,
+			"output_channel":   "telegram",
+			"allowed_tools":    opts.AllowedTools,
+			"user_preferences": userPrefs,
+			"gws_credentials":  opts.GWSCredentials,
+		}
+
+		// Include voice data as base64 for backend transcription
+		if len(voiceData) > 0 {
+			payload["voice_data"] = base64.StdEncoding.EncodeToString(voiceData)
+			payload["voice_format"] = "ogg" // Telegram voice messages are OGG
+		}
+
 		task := &queue.Task{
 			UserID:      userID,
 			Type:        "message",
 			Priority:    50,
 			CallbackURL: callbackURL,
-			// NOTE: ConversationID is managed by Duq, not Gateway
-			Payload: map[string]interface{}{
-				"message":          text,
-				"output_channel":   "telegram",
-				"allowed_tools":    opts.AllowedTools,
-				// NOTE: History removed — Duq loads from DB
-				"user_preferences": userPrefs,
-				"gws_credentials":  opts.GWSCredentials,
-			},
+			Payload:     payload,
 			RequestMetadata: map[string]interface{}{
 				"chat_id":    msg.Chat.ID,
 				"user_email": userEmail,

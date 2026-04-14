@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,9 +11,10 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"duq-gateway/internal/config"
-	"duq-gateway/internal/duq"
+	"duq-gateway/internal/queue"
 )
 
 type GitHubWebhook struct {
@@ -46,9 +48,14 @@ type GitHubUser struct {
 	Login string `json:"login"`
 }
 
-func GitHub(cfg *config.Config) http.HandlerFunc {
-	client := duq.NewClient(cfg)
-	secret := cfg.GitHubSecret
+// GitHubDeps contains dependencies for github handler
+type GitHubDeps struct {
+	Config      *config.Config
+	QueueClient *queue.Client
+}
+
+func GitHub(deps *GitHubDeps) http.HandlerFunc {
+	secret := deps.Config.GitHubSecret
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -84,14 +91,38 @@ func GitHub(cfg *config.Config) http.HandlerFunc {
 
 		log.Printf("GitHub webhook: %s/%s - %s", eventType, webhook.Action, webhook.Repository.Name)
 
-		if err := client.SendMessage(r.Context(), message); err != nil {
-			log.Printf("Failed to send message: %v", err)
-			http.Error(w, "Failed to send notification", http.StatusInternalServerError)
+		// Push to Redis queue instead of direct HTTP
+		callbackURL := fmt.Sprintf("http://%s/api/duq/callback", deps.Config.GatewayHost)
+		task := &queue.Task{
+			UserID:      deps.Config.TelegramChatID,
+			Type:        "notification",
+			Priority:    50,
+			CallbackURL: callbackURL,
+			Payload: map[string]interface{}{
+				"message":        message,
+				"output_channel": "telegram",
+				"source":         "github_webhook",
+			},
+			RequestMetadata: map[string]interface{}{
+				"chat_id": deps.Config.TelegramChatID,
+				"source":  "github",
+			},
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+
+		taskID, err := deps.QueueClient.Push(ctx, task)
+		if err != nil {
+			log.Printf("Failed to queue github notification: %v", err)
+			http.Error(w, "Failed to queue notification", http.StatusInternalServerError)
 			return
 		}
 
+		log.Printf("GitHub notification queued: task_id=%s", taskID)
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "task_id": taskID})
 	}
 }
 

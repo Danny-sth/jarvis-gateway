@@ -10,9 +10,19 @@ import (
 
 	"duq-gateway/internal/channels"
 	"duq-gateway/internal/config"
-	"duq-gateway/internal/duq"
 	"duq-gateway/internal/session"
 )
+
+// CallbackPayload from Duq worker (defines locally, no import from duq package)
+type CallbackPayload struct {
+	TaskID          string                 `json:"task_id"`
+	UserID          string                 `json:"user_id"`
+	Success         bool                   `json:"success"`
+	Error           string                 `json:"error,omitempty"`
+	Result          map[string]interface{} `json:"result,omitempty"`
+	RequestMetadata map[string]interface{} `json:"request_metadata,omitempty"`
+	ExecutionTimeMs *int64                 `json:"execution_time_ms,omitempty"`
+}
 
 // CallbackDeps contains dependencies for the callback handler
 type CallbackDeps struct {
@@ -33,7 +43,7 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		var payload duq.CallbackPayload
+		var payload CallbackPayload
 		if err := json.Unmarshal(body, &payload); err != nil {
 			log.Printf("[callback] Failed to decode payload: %v", err)
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)

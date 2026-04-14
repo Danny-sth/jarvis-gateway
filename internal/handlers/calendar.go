@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -8,7 +9,7 @@ import (
 	"time"
 
 	"duq-gateway/internal/config"
-	"duq-gateway/internal/duq"
+	"duq-gateway/internal/queue"
 )
 
 type CalendarEvent struct {
@@ -26,9 +27,13 @@ type CalendarWebhook struct {
 	Minutes int           `json:"minutes_before,omitempty"` // for reminders
 }
 
-func Calendar(cfg *config.Config) http.HandlerFunc {
-	client := duq.NewClient(cfg)
+// CalendarDeps contains dependencies for calendar handler
+type CalendarDeps struct {
+	Config      *config.Config
+	QueueClient *queue.Client
+}
 
+func Calendar(deps *CalendarDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var webhook CalendarWebhook
 		if err := json.NewDecoder(r.Body).Decode(&webhook); err != nil {
@@ -44,14 +49,38 @@ func Calendar(cfg *config.Config) http.HandlerFunc {
 
 		log.Printf("Calendar webhook: %s - %s", webhook.Type, webhook.Event.Title)
 
-		if err := client.SendMessage(r.Context(), message); err != nil {
-			log.Printf("Failed to send message: %v", err)
-			http.Error(w, "Failed to send notification", http.StatusInternalServerError)
+		// Push to Redis queue instead of direct HTTP
+		callbackURL := fmt.Sprintf("http://%s/api/duq/callback", deps.Config.GatewayHost)
+		task := &queue.Task{
+			UserID:      deps.Config.TelegramChatID,
+			Type:        "notification",
+			Priority:    70,
+			CallbackURL: callbackURL,
+			Payload: map[string]interface{}{
+				"message":        message,
+				"output_channel": "telegram",
+				"source":         "calendar_webhook",
+			},
+			RequestMetadata: map[string]interface{}{
+				"chat_id": deps.Config.TelegramChatID, // string, will be parsed by callback handler
+				"source":  "calendar",
+			},
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+
+		taskID, err := deps.QueueClient.Push(ctx, task)
+		if err != nil {
+			log.Printf("Failed to queue calendar notification: %v", err)
+			http.Error(w, "Failed to queue notification", http.StatusInternalServerError)
 			return
 		}
 
+		log.Printf("Calendar notification queued: task_id=%s", taskID)
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "task_id": taskID})
 	}
 }
 

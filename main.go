@@ -70,8 +70,7 @@ func main() {
 	}
 	defer queueClient.Close()
 
-	// Initialize HTTP clients with configured timeouts
-	handlers.InitProxyClient(cfg)
+	// Initialize Keycloak client
 	handlers.InitKeycloakClient(cfg)
 
 	// Initialize services
@@ -146,24 +145,22 @@ func main() {
 	mux.HandleFunc("GET /api/docs/{name}/content", handlers.DocsContent(cfg)) // Public endpoint for raw markdown
 
 	// Webhook endpoints (rate limited to prevent DoS)
-	mux.HandleFunc("POST /api/calendar", middleware.RateLimitFunc(webhookLimiter, handlers.Calendar(cfg)))
-	mux.HandleFunc("POST /api/gmail", middleware.RateLimitFunc(webhookLimiter, handlers.Gmail(cfg)))
-	mux.HandleFunc("POST /api/github", middleware.RateLimitFunc(webhookLimiter, handlers.GitHub(cfg)))
-	mux.HandleFunc("POST /api/custom", middleware.RateLimitFunc(webhookLimiter, handlers.Custom(cfg)))
+	// All webhooks push to Redis queue - no direct HTTP to backend
+	calendarDeps := &handlers.CalendarDeps{Config: cfg, QueueClient: queueClient}
+	gmailDeps := &handlers.GmailDeps{Config: cfg, QueueClient: queueClient}
+	githubDeps := &handlers.GitHubDeps{Config: cfg, QueueClient: queueClient}
+	customDeps := &handlers.CustomDeps{Config: cfg, QueueClient: queueClient}
+
+	mux.HandleFunc("POST /api/calendar", middleware.RateLimitFunc(webhookLimiter, handlers.Calendar(calendarDeps)))
+	mux.HandleFunc("POST /api/gmail", middleware.RateLimitFunc(webhookLimiter, handlers.Gmail(gmailDeps)))
+	mux.HandleFunc("POST /api/github", middleware.RateLimitFunc(webhookLimiter, handlers.GitHub(githubDeps)))
+	mux.HandleFunc("POST /api/custom", middleware.RateLimitFunc(webhookLimiter, handlers.Custom(customDeps)))
 
 	// Telegram endpoints (rate limited)
 	mux.HandleFunc("POST /api/telegram/webhook", middleware.RateLimitFunc(telegramLimiter, handlers.TelegramWithDeps(telegramDeps)))
 	mux.HandleFunc("POST /api/telegram/send", handlers.TelegramSend(cfg))
 
-	// Voice endpoint for mobile app (Keycloak SSO) - proxies to Duq /api/voice
-	voiceDeps := &handlers.VoiceDeps{
-		Config:         cfg,
-		DBClient:       dbClient,
-		SessionService: sessionService,
-	}
-	mux.HandleFunc("POST /api/voice", middleware.KeycloakAuth(cfg, dbClient, handlers.Voice(voiceDeps)))
-
-	// Note: Conversation management moved to RBAC Proxy section (proxied to Duq)
+	// Voice endpoint REMOVED - all requests through Redis queue
 
 	// Google OAuth endpoints
 	mux.HandleFunc("GET /api/auth/google/callback", handlers.GoogleOAuthCallback(oauthDeps))
@@ -193,48 +190,11 @@ func main() {
 	mux.HandleFunc("PUT /api/users/{id}", middleware.KeycloakAuth(cfg, dbClient, handlers.UpdateUser(dbClient)))
 	mux.HandleFunc("DELETE /api/users/{id}", middleware.KeycloakAuth(cfg, dbClient, handlers.DeleteUser(dbClient)))
 
-	// RBAC Proxy endpoints to Duq backend (Keycloak SSO)
-	proxyDeps := &handlers.ProxyDeps{Config: cfg, DBClient: dbClient}
+	// ALL PROXY ENDPOINTS REMOVED
+	// All requests to Duq backend go through Redis queue only
+	// Gateway pushes to duq:requests, worker (backend) processes and responds
 
-	// Conversations — proxied to Duq (owns conversation storage)
-	mux.HandleFunc("GET /api/conversations", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyConversationsList(proxyDeps)))
-	mux.HandleFunc("POST /api/conversations", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyConversationsCreate(proxyDeps)))
-	mux.HandleFunc("GET /api/conversations/{id}/messages", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyConversationsMessages(proxyDeps)))
-	mux.HandleFunc("PUT /api/conversations/{id}", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyConversationsUpdate(proxyDeps)))
-	mux.HandleFunc("DELETE /api/conversations/{id}", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyConversationsEnd(proxyDeps)))
-
-	// Workflows
-	mux.HandleFunc("GET /api/workflows", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyWorkflowsList(proxyDeps)))
-	mux.HandleFunc("POST /api/workflows", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyWorkflowCreate(proxyDeps)))
-	mux.HandleFunc("GET /api/workflows/{id}", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyWorkflowGet(proxyDeps)))
-	mux.HandleFunc("DELETE /api/workflows/{id}", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyWorkflowDelete(proxyDeps)))
-	mux.HandleFunc("POST /api/workflows/{id}/run", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyWorkflowRun(proxyDeps)))
-
-	// Recurring Tasks
-	mux.HandleFunc("GET /api/recurring", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyRecurringList(proxyDeps)))
-	mux.HandleFunc("POST /api/recurring", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyRecurringCreate(proxyDeps)))
-	mux.HandleFunc("DELETE /api/recurring/{id}", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyRecurringDelete(proxyDeps)))
-	mux.HandleFunc("GET /api/recurring/preview", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyRecurringPreview(proxyDeps)))
-
-	// Cortex Memory
-	mux.HandleFunc("GET /api/cortex/search", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyCortexSearch(proxyDeps)))
-	mux.HandleFunc("POST /api/cortex/store", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyCortexStore(proxyDeps)))
-
-	// Heartbeat
-	mux.HandleFunc("GET /api/heartbeat/config", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyHeartbeatConfig(proxyDeps)))
-	mux.HandleFunc("PUT /api/heartbeat/config", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyHeartbeatUpdate(proxyDeps)))
-	mux.HandleFunc("POST /api/heartbeat/run", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyHeartbeatRun(proxyDeps)))
-	mux.HandleFunc("GET /api/heartbeat/checks", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyHeartbeatChecks(proxyDeps)))
-
-	// Queue
-	mux.HandleFunc("GET /api/queue/stats/overview", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyQueueStats(proxyDeps)))
-
-	// Monitoring
-	mux.HandleFunc("GET /api/monitoring/llm/usage", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyMonitoringLLMUsage(proxyDeps)))
-	mux.HandleFunc("GET /api/monitoring/stats/summary", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyMonitoringStats(proxyDeps)))
-	mux.HandleFunc("GET /api/monitoring/events", middleware.KeycloakAuth(cfg, dbClient, handlers.ProxyMonitoringEvents(proxyDeps)))
-
-	// Phase 3: Duq callback endpoint (receives async task results)
+	// Phase 3: Duq callback endpoint (receives async task results from worker)
 	mux.HandleFunc("POST /api/duq/callback", handlers.DuqCallback(callbackDeps))
 
 	// Admin Panel Reverse Proxy (Python FastAPI on port 8080)

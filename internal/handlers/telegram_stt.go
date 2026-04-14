@@ -1,106 +1,94 @@
 package handlers
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
-	"mime/multipart"
 	"net/http"
-	"time"
 
 	"duq-gateway/internal/config"
 )
 
-// transcribeVoice downloads a voice file from Telegram and sends to Duq for STT
-func transcribeVoice(cfg *config.Config, fileID string) (string, error) {
-	botToken := cfg.Telegram.BotToken
-	if botToken == "" {
-		return "", fmt.Errorf("telegram bot token not configured")
-	}
+// VoiceFileInfo contains information about a voice/audio file from Telegram
+type VoiceFileInfo struct {
+	FileID   string `json:"file_id"`
+	FileSize int    `json:"file_size,omitempty"`
+	Duration int    `json:"duration,omitempty"`
+	MimeType string `json:"mime_type,omitempty"`
+}
 
+// getVoiceFileURL gets the download URL for a Telegram file
+// This is used by the backend worker to download and transcribe
+func getVoiceFileURL(cfg *config.Config, fileID string) (string, error) {
 	// Get file path from Telegram
-	getFileURL := fmt.Sprintf("https://api.telegram.org/bot%s/getFile?file_id=%s", botToken, fileID)
-	resp, err := http.Get(getFileURL)
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/getFile?file_id=%s",
+		cfg.Telegram.BotToken, fileID)
+
+	resp, err := http.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("failed to get file info: %w", err)
 	}
 	defer resp.Body.Close()
 
-	var fileResp TelegramFileResponse
-	if err := json.NewDecoder(resp.Body).Decode(&fileResp); err != nil {
-		return "", fmt.Errorf("failed to decode file response: %w", err)
-	}
-
-	if !fileResp.OK || fileResp.Result.FilePath == "" {
-		return "", fmt.Errorf("telegram API returned error or empty path")
-	}
-
-	// Download the file
-	downloadURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", botToken, fileResp.Result.FilePath)
-	fileResp2, err := http.Get(downloadURL)
-	if err != nil {
-		return "", fmt.Errorf("failed to download file: %w", err)
-	}
-	defer fileResp2.Body.Close()
-
-	// Read audio bytes
-	audioBytes, err := io.ReadAll(fileResp2.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read audio: %w", err)
-	}
-
-	log.Printf("[telegram] Downloaded audio: %d bytes", len(audioBytes))
-
-	// Send to Duq /api/voice/transcribe for STT
-	duqURL := cfg.DuqURL
-	if duqURL == "" {
-		duqURL = "http://localhost:8081"
-	}
-
-	// Build multipart form
-	var buf bytes.Buffer
-	writer := multipart.NewWriter(&buf)
-
-	part, err := writer.CreateFormFile("audio", "voice.ogg")
-	if err != nil {
-		return "", fmt.Errorf("failed to create form file: %w", err)
-	}
-	if _, err := part.Write(audioBytes); err != nil {
-		return "", fmt.Errorf("failed to write audio: %w", err)
-	}
-	writer.Close()
-
-	// Send request to Duq
-	url := duqURL + "/api/voice/transcribe"
-	log.Printf("[telegram] POST %s (audio=%d bytes)", url, len(audioBytes))
-
-	client := &http.Client{Timeout: 120 * time.Second}
-	transcribeResp, err := client.Post(url, writer.FormDataContentType(), &buf)
-	if err != nil {
-		return "", fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer transcribeResp.Body.Close()
-
-	body, err := io.ReadAll(transcribeResp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 
-	if transcribeResp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("duq transcribe returned %d: %s", transcribeResp.StatusCode, string(body))
+	var result struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			FilePath string `json:"file_path"`
+		} `json:"result"`
 	}
 
-	var duqResp DuqTranscribeResponse
-	if err := json.Unmarshal(body, &duqResp); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	if duqResp.Transcription == "" {
-		return "", fmt.Errorf("STT returned empty result")
+	if !result.OK || result.Result.FilePath == "" {
+		return "", fmt.Errorf("telegram API error: %s", string(body))
 	}
 
-	log.Printf("[telegram] Duq STT result: %s", truncateStr(duqResp.Transcription, 100))
-	return duqResp.Transcription, nil
+	// Build download URL
+	downloadURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s",
+		cfg.Telegram.BotToken, result.Result.FilePath)
+
+	return downloadURL, nil
+}
+
+// downloadVoiceFile downloads voice/audio file from Telegram
+// Returns the raw audio bytes
+func downloadVoiceFile(cfg *config.Config, fileID string) ([]byte, error) {
+	downloadURL, err := getVoiceFileURL(cfg, fileID)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.Get(downloadURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download file: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download failed: status %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	return data, nil
+}
+
+// transcribeVoice is now a pass-through - actual transcription happens in backend worker
+// Gateway just downloads and base64 encodes the audio for the queue
+// Returns empty string - the text will come from backend after processing
+func transcribeVoice(cfg *config.Config, fileID string) (string, error) {
+	// In queue-based architecture, we don't transcribe in gateway
+	// We pass the file_id through the queue and backend handles transcription
+	// Return placeholder - the actual message will use voice_file_id in payload
+	return "", nil
 }

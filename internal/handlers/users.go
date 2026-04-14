@@ -38,7 +38,10 @@ type UpdateUserRequest struct {
 	IsActive   *bool   `json:"is_active,omitempty"`
 }
 
-// Note: isAdmin helper function is defined in proxy.go to avoid duplication
+// isAdmin checks if the role has admin privileges
+func isAdmin(role string) bool {
+	return role == "admin" || role == "superadmin" || role == "owner"
+}
 
 // GET /api/users?search=&role=
 func ListUsers(dbClient *db.Client) http.HandlerFunc {

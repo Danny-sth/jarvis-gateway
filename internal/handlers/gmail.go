@@ -1,13 +1,15 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"duq-gateway/internal/config"
-	"duq-gateway/internal/duq"
+	"duq-gateway/internal/queue"
 )
 
 type GmailWebhook struct {
@@ -18,9 +20,13 @@ type GmailWebhook struct {
 	Labels  []string `json:"labels,omitempty"`
 }
 
-func Gmail(cfg *config.Config) http.HandlerFunc {
-	client := duq.NewClient(cfg)
+// GmailDeps contains dependencies for gmail handler
+type GmailDeps struct {
+	Config      *config.Config
+	QueueClient *queue.Client
+}
 
+func Gmail(deps *GmailDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var webhook GmailWebhook
 		if err := json.NewDecoder(r.Body).Decode(&webhook); err != nil {
@@ -36,14 +42,38 @@ func Gmail(cfg *config.Config) http.HandlerFunc {
 
 		log.Printf("Gmail webhook: %s - %s", webhook.Type, webhook.Subject)
 
-		if err := client.SendMessage(r.Context(), message); err != nil {
-			log.Printf("Failed to send message: %v", err)
-			http.Error(w, "Failed to send notification", http.StatusInternalServerError)
+		// Push to Redis queue instead of direct HTTP
+		callbackURL := fmt.Sprintf("http://%s/api/duq/callback", deps.Config.GatewayHost)
+		task := &queue.Task{
+			UserID:      deps.Config.TelegramChatID,
+			Type:        "notification",
+			Priority:    60,
+			CallbackURL: callbackURL,
+			Payload: map[string]interface{}{
+				"message":        message,
+				"output_channel": "telegram",
+				"source":         "gmail_webhook",
+			},
+			RequestMetadata: map[string]interface{}{
+				"chat_id": deps.Config.TelegramChatID,
+				"source":  "gmail",
+			},
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+
+		taskID, err := deps.QueueClient.Push(ctx, task)
+		if err != nil {
+			log.Printf("Failed to queue gmail notification: %v", err)
+			http.Error(w, "Failed to queue notification", http.StatusInternalServerError)
 			return
 		}
 
+		log.Printf("Gmail notification queued: task_id=%s", taskID)
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "task_id": taskID})
 	}
 }
 
