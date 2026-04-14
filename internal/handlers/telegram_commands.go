@@ -37,74 +37,10 @@ func handleTelegramCommand(w http.ResponseWriter, msg *TelegramMessage, command 
 }
 
 // handleHistoryCommand handles /history command
+// NOTE: History is managed by Duq backend, not gateway
 func handleHistoryCommand(w http.ResponseWriter, msg *TelegramMessage, parts []string, deps *TelegramDeps) {
 	telegramID := msg.Chat.ID
-
-	if deps.SessionService == nil {
-		SendTelegramMessage(deps.Config, telegramID, "❌ History service not available")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// Get conversation ID
-	convID, err := deps.SessionService.GetOrCreateConversationID(telegramID)
-	if err != nil {
-		log.Printf("[telegram/history] Failed to get conversation: %v", err)
-		SendTelegramMessage(deps.Config, telegramID, "❌ Failed to load conversation")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// Get messages count (default 10, max 50)
-	count := 10
-	if len(parts) > 1 {
-		if n, err := fmt.Sscanf(parts[1], "%d", &count); err == nil && n == 1 {
-			if count > 50 {
-				count = 50
-			}
-			if count < 1 {
-				count = 1
-			}
-		}
-	}
-
-	// Get recent messages
-	messages, err := deps.SessionService.GetRecentMessagesSimple(convID, count)
-	if err != nil {
-		log.Printf("[telegram/history] Failed to get messages: %v", err)
-		SendTelegramMessage(deps.Config, telegramID, "❌ Failed to load history")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	if len(messages) == 0 {
-		SendTelegramMessage(deps.Config, telegramID, "📭 No messages in history")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// Format history
-	var response strings.Builder
-	response.WriteString(fmt.Sprintf("📜 *Last %d messages:*\n\n", len(messages)))
-
-	for _, m := range messages {
-		emoji := "👤"
-		if m.Role == "assistant" {
-			emoji = "🤖"
-		}
-
-		// Truncate long messages
-		content := m.Content
-		if len(content) > 200 {
-			content = content[:200] + "..."
-		}
-
-		response.WriteString(fmt.Sprintf("%s *%s:* %s\n\n", emoji, m.Role, content))
-	}
-
-	response.WriteString(fmt.Sprintf("_Conversation ID: %s_", convID))
-
-	SendTelegramMessage(deps.Config, telegramID, response.String())
+	SendTelegramMessage(deps.Config, telegramID, "📜 История хранится на сервере. Спроси меня: \"покажи историю\"")
 	w.WriteHeader(http.StatusOK)
 }
 

@@ -1,10 +1,8 @@
 package handlers
 
 import (
-	"fmt"
 	"log"
 	"net/http"
-	"strings"
 )
 
 // handleCallbackQuery processes inline keyboard button clicks
@@ -38,49 +36,9 @@ func handleCallbackQuery(w http.ResponseWriter, callback *TelegramCallbackQuery,
 }
 
 // handleMenuHistory shows last 10 messages
+// NOTE: History is managed by Duq backend, not gateway
 func handleMenuHistory(w http.ResponseWriter, chatID int64, deps *TelegramDeps) {
-	if deps.SessionService == nil {
-		SendTelegramMessage(deps.Config, chatID, "❌ История недоступна")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	convID, err := deps.SessionService.GetOrCreateConversationID(chatID)
-	if err != nil {
-		SendTelegramMessage(deps.Config, chatID, "❌ Не удалось загрузить историю")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	messages, err := deps.SessionService.GetRecentMessagesSimple(convID, 10)
-	if err != nil {
-		SendTelegramMessage(deps.Config, chatID, "❌ Не удалось загрузить историю")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	if len(messages) == 0 {
-		SendTelegramMessage(deps.Config, chatID, "📭 История пуста. Отправь мне сообщение!")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	var response strings.Builder
-	response.WriteString(fmt.Sprintf("📜 *Последние %d сообщений:*\n\n", len(messages)))
-
-	for _, m := range messages {
-		emoji := "👤"
-		if m.Role == "assistant" {
-			emoji = "🤖"
-		}
-		content := m.Content
-		if len(content) > 150 {
-			content = content[:150] + "..."
-		}
-		response.WriteString(fmt.Sprintf("%s %s\n\n", emoji, content))
-	}
-
-	SendTelegramMessage(deps.Config, chatID, response.String())
+	SendTelegramMessage(deps.Config, chatID, "📜 История хранится на сервере. Спроси меня: \"покажи историю\"")
 	w.WriteHeader(http.StatusOK)
 }
 

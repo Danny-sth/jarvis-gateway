@@ -23,7 +23,6 @@ import (
 	"duq-gateway/internal/queue"
 	"duq-gateway/internal/rbac"
 	"duq-gateway/internal/registration"
-	"duq-gateway/internal/session"
 )
 
 func main() {
@@ -75,8 +74,6 @@ func main() {
 
 	// Initialize services
 	rbacService := rbac.NewService(dbClient.DB(), cfg.Timeouts.RBACCacheTTLMin)
-	sessionService := session.NewService(dbClient.DB())
-	sessionAdapter := session.NewHandlerAdapter(sessionService)
 	credService := credentials.NewService(dbClient.DB())
 
 	// Build channel router (SOLID: easily extensible with new channels)
@@ -99,7 +96,6 @@ func main() {
 		Config:              cfg,
 		QueueClient:         queueClient,
 		RBACService:         rbacService,
-		SessionService:      sessionAdapter,
 		CredService:         credService,
 		ChannelRouter:       channelRouter,
 		DBClient:            dbClient,
@@ -116,11 +112,7 @@ func main() {
 	}
 
 	// Phase 3: Callback dependencies (for async task results)
-	callbackDeps := &handlers.CallbackDeps{
-		Config:         cfg,
-		SessionService: sessionAdapter,
-		ChannelRouter:  channelRouter,
-	}
+	callbackDeps := handlers.NewCallbackDeps(cfg, channelRouter)
 
 	// Rate limiters for public endpoints (prevent DoS)
 	// Telegram: 60 req/min per IP (Telegram servers use few IPs)

@@ -10,7 +10,6 @@ import (
 
 	"duq-gateway/internal/channels"
 	"duq-gateway/internal/config"
-	"duq-gateway/internal/session"
 )
 
 // CallbackPayload from Duq worker (defines locally, no import from duq package)
@@ -26,12 +25,11 @@ type CallbackPayload struct {
 
 // CallbackDeps contains dependencies for the callback handler
 type CallbackDeps struct {
-	Config         *config.Config
-	SessionService SessionServiceInterface
-	ChannelRouter  *channels.Router
+	Config        *config.Config
+	ChannelRouter *channels.Router
 }
 
-// DuqCallback handles callbacks from Duq TwoLevelWorker.
+// DuqCallback handles callbacks from Duq worker.
 // When a queued task completes, Duq POSTs the result here.
 func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -127,15 +125,6 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 			}
 		}
 
-		// Save assistant response to session
-		if deps.SessionService != nil {
-			if convID, ok := payload.RequestMetadata["conversation_id"].(string); ok && convID != "" {
-				if err := deps.SessionService.SaveMessageSimple(convID, "assistant", response); err != nil {
-					log.Printf("[callback] Failed to save assistant message: %v", err)
-				}
-			}
-		}
-
 		// Route response via channel router
 		go func() {
 			ctx := &channels.ResponseContext{
@@ -172,19 +161,9 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 }
 
 // NewCallbackDeps creates CallbackDeps from existing services
-func NewCallbackDeps(
-	cfg *config.Config,
-	sessionService SessionServiceInterface,
-	channelRouter *channels.Router,
-) *CallbackDeps {
+func NewCallbackDeps(cfg *config.Config, channelRouter *channels.Router) *CallbackDeps {
 	return &CallbackDeps{
-		Config:         cfg,
-		SessionService: sessionService,
-		ChannelRouter:  channelRouter,
+		Config:        cfg,
+		ChannelRouter: channelRouter,
 	}
-}
-
-// NewSessionAdapterForCallback creates session adapter for callback handler
-func NewSessionAdapterForCallback(svc *session.Service) SessionServiceInterface {
-	return session.NewHandlerAdapter(svc)
 }

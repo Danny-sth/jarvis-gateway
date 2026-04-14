@@ -13,7 +13,6 @@ import (
 	"duq-gateway/internal/credentials"
 	"duq-gateway/internal/queue"
 	"duq-gateway/internal/registration"
-	"duq-gateway/internal/session"
 )
 
 // ==================== Utility Function Tests ====================
@@ -241,26 +240,6 @@ func (m *MockRBACService) GetAllowedTools(userID int64) ([]string, error) {
 
 func (m *MockRBACService) EnsureUser(userID int64, username, firstName, lastName string) error {
 	return m.ensureErr
-}
-
-type MockSessionService struct {
-	conversationID string
-	messages       []session.HistoryMessage
-	convErr        error
-	msgErr         error
-	saveErr        error
-}
-
-func (m *MockSessionService) GetOrCreateConversationID(userID int64) (string, error) {
-	return m.conversationID, m.convErr
-}
-
-func (m *MockSessionService) GetRecentMessagesSimple(conversationID string, limit int) ([]session.HistoryMessage, error) {
-	return m.messages, m.msgErr
-}
-
-func (m *MockSessionService) SaveMessageSimple(conversationID string, role, content string) error {
-	return m.saveErr
 }
 
 type MockCredService struct {

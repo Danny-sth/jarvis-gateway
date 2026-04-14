@@ -30,12 +30,11 @@ type APIResponse struct {
 
 // APIDeps - dependencies for unified API
 type APIDeps struct {
-	Config         *config.Config
-	DBClient       *db.Client
-	SessionService SessionServiceInterface
-	QueueClient    *queue.Client
-	CredService    CredentialServiceInterface
-	RBACService    RBACServiceInterface
+	Config      *config.Config
+	DBClient    *db.Client
+	QueueClient *queue.Client
+	CredService CredentialServiceInterface
+	RBACService RBACServiceInterface
 }
 
 // ProcessMessage - THE CORE LOGIC for all message processing
