@@ -61,11 +61,13 @@ func DefaultCSRFConfig() CSRFConfig {
 			"/api/gmail",
 			"/api/custom",
 			"/api/duq/callback",
+			"/api/mcp", // MCP endpoint uses Bearer token auth
 		},
 		ExcludePrefixes: []string{
-			"/api/auth/keycloak/",      // OAuth callbacks
-			"/api/auth/google/",        // OAuth callbacks
-			"/api/oauth/",              // OAuth flows
+			"/api/auth/keycloak/", // OAuth callbacks
+			"/api/auth/google/",   // OAuth callbacks
+			"/api/oauth/",         // OAuth flows
+			"/realms/",            // Keycloak proxy (OAuth token endpoint)
 		},
 		ErrorHandler: defaultCSRFErrorHandler,
 	}

@@ -134,6 +134,40 @@ func (c *Client) taskToHash(task *Task) map[string]interface{} {
 	}
 }
 
+// WaitForResponse waits for task response using BRPOP (blocking)
+// Returns response payload or error if timeout
+func (c *Client) WaitForResponse(ctx context.Context, taskID string, timeout time.Duration) (map[string]interface{}, error) {
+	responseKey := fmt.Sprintf("%s:response:%s", c.prefix, taskID)
+	readyKey := fmt.Sprintf("%s:ready", responseKey)
+
+	// BRPOP waits for response signal
+	result, err := c.rdb.BRPop(ctx, timeout, readyKey).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, fmt.Errorf("timeout waiting for response")
+		}
+		return nil, fmt.Errorf("BRPOP failed: %w", err)
+	}
+
+	log.Printf("[queue] Got response signal for task %s: %v", taskID, result)
+
+	// Get actual response data
+	data, err := c.rdb.Get(ctx, responseKey).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get response: %w", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(data), &payload); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Cleanup
+	c.rdb.Del(ctx, responseKey, readyKey)
+
+	return payload, nil
+}
+
 // Close closes Redis connection
 func (c *Client) Close() error {
 	return c.rdb.Close()

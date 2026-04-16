@@ -417,6 +417,117 @@ func mapKeycloakUser(dbClient *db.Client, claims *KeycloakClaims) (*LocalUserInf
 	}, nil
 }
 
+// ServiceAccountClaims represents JWT claims for service account (client_credentials flow)
+type ServiceAccountClaims struct {
+	Azp          string   `json:"azp"`           // Authorized party (client_id)
+	ClientID     string   `json:"clientId"`      // Client ID (sometimes in this field)
+	Scope        string   `json:"scope"`         // Token scope
+	RealmAccess  RealmAccess `json:"realm_access"`
+	jwt.RegisteredClaims
+}
+
+// KeycloakServiceAuth middleware validates service account tokens (client_credentials flow)
+// Unlike KeycloakAuth, this does NOT map to local users - just validates the token and client_id
+func KeycloakServiceAuth(cfg *config.Config, allowedClients []string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !cfg.Keycloak.Enabled {
+			// Keycloak not enabled, skip
+			next(w, r)
+			return
+		}
+
+		// Get token from Authorization header
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, `{"error":"missing Authorization header"}`, http.StatusUnauthorized)
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		if tokenString == authHeader {
+			http.Error(w, `{"error":"invalid Authorization format"}`, http.StatusUnauthorized)
+			return
+		}
+
+		// Get JWKS cache
+		cache := getJWKSCache(cfg.Keycloak.URL, cfg.Keycloak.Realm, cfg.Timeouts.JWKSCacheTTLMin, cfg.Timeouts.KeycloakTimeout)
+
+		// Ensure JWKS is fetched
+		if err := cache.fetchJWKS(); err != nil {
+			log.Printf("[keycloak-service] Failed to fetch JWKS: %v", err)
+			http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+			return
+		}
+
+		// Parse and validate token
+		claims := &ServiceAccountClaims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			// Verify signing method
+			if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+
+			// Get key ID from token header
+			kid, ok := token.Header["kid"].(string)
+			if !ok {
+				return nil, fmt.Errorf("missing kid in token header")
+			}
+
+			return cache.getKey(kid)
+		})
+
+		if err != nil {
+			log.Printf("[keycloak-service] Token validation failed: %v", err)
+			http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+			return
+		}
+
+		if !token.Valid {
+			http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+			return
+		}
+
+		// Verify issuer matches our Keycloak realm
+		expectedIssuer := fmt.Sprintf("%s/realms/%s", cfg.Keycloak.URL, cfg.Keycloak.Realm)
+		if claims.Issuer != expectedIssuer {
+			log.Printf("[keycloak-service] Invalid issuer: expected %s, got %s", expectedIssuer, claims.Issuer)
+			http.Error(w, `{"error":"invalid token issuer"}`, http.StatusUnauthorized)
+			return
+		}
+
+		// Get client ID (can be in azp or clientId field)
+		clientID := claims.Azp
+		if clientID == "" {
+			clientID = claims.ClientID
+		}
+
+		// Verify client_id is in allowed list
+		if len(allowedClients) > 0 {
+			allowed := false
+			for _, c := range allowedClients {
+				if c == clientID {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				log.Printf("[keycloak-service] Client %s not in allowed list: %v", clientID, allowedClients)
+				http.Error(w, `{"error":"client not authorized"}`, http.StatusForbidden)
+				return
+			}
+		}
+
+		// Add service account info to request context
+		ctx := context.WithValue(r.Context(), "service_account", true)
+		ctx = context.WithValue(ctx, "client_id", clientID)
+		ctx = context.WithValue(ctx, "scope", claims.Scope)
+
+		log.Printf("[keycloak-service] Authenticated service account: client_id=%s, scope=%s", clientID, claims.Scope)
+
+		next(w, r.WithContext(ctx))
+	}
+}
+
 // KeycloakOrJWT middleware tries Keycloak first, then falls back to legacy JWT
 func KeycloakOrJWT(cfg *config.Config, dbClient *db.Client, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

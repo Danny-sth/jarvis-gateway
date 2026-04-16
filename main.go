@@ -142,11 +142,18 @@ func main() {
 	gmailDeps := &handlers.GmailDeps{Config: cfg, QueueClient: queueClient}
 	githubDeps := &handlers.GitHubDeps{Config: cfg, QueueClient: queueClient}
 	customDeps := &handlers.CustomDeps{Config: cfg, QueueClient: queueClient}
+	mcpDeps := &handlers.MCPDeps{Config: cfg, QueueClient: queueClient}
 
 	mux.HandleFunc("POST /api/calendar", middleware.RateLimitFunc(webhookLimiter, handlers.Calendar(calendarDeps)))
 	mux.HandleFunc("POST /api/gmail", middleware.RateLimitFunc(webhookLimiter, handlers.Gmail(gmailDeps)))
 	mux.HandleFunc("POST /api/github", middleware.RateLimitFunc(webhookLimiter, handlers.GitHub(githubDeps)))
 	mux.HandleFunc("POST /api/custom", middleware.RateLimitFunc(webhookLimiter, handlers.Custom(customDeps)))
+
+	// MCP endpoint - synchronous, waits for response (used by Claude Code)
+	// Protected by Keycloak service account auth (client_credentials flow)
+	// Empty list = any valid token from our Keycloak realm is accepted
+	mcpAllowedClients := []string{} // TODO: add "duq-mcp" when service account created
+	mux.HandleFunc("POST /api/mcp", middleware.KeycloakServiceAuth(cfg, mcpAllowedClients, handlers.MCP(mcpDeps)))
 
 	// Telegram endpoints (rate limited)
 	mux.HandleFunc("POST /api/telegram/webhook", middleware.RateLimitFunc(telegramLimiter, handlers.TelegramWithDeps(telegramDeps)))
