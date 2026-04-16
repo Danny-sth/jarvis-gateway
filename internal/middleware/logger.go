@@ -3,8 +3,25 @@ package middleware
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
+
+// Paths excluded from access logging (noisy endpoints)
+var excludedPaths = []string{
+	"/api/system/metrics",
+	"/api/monitoring/",
+	"/health",
+}
+
+func shouldSkipLogging(path string) bool {
+	for _, excluded := range excludedPaths {
+		if strings.HasPrefix(path, excluded) {
+			return true
+		}
+	}
+	return false
+}
 
 type responseWriter struct {
 	http.ResponseWriter
@@ -32,12 +49,18 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 }
 
 // Logger returns a middleware that logs HTTP requests using structured logging (slog).
+// Excludes noisy endpoints like /health and /api/system/metrics from logging.
 func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 
 		next.ServeHTTP(rw, r)
+
+		// Skip logging for noisy endpoints
+		if shouldSkipLogging(r.URL.Path) {
+			return
+		}
 
 		duration := time.Since(start)
 
@@ -55,7 +78,8 @@ func Logger(next http.Handler) http.Handler {
 }
 
 // LoggerWithLevel returns a logger middleware that uses different log levels
-// based on response status code.
+// based on response status code. Excludes noisy endpoints from INFO logging
+// but still logs errors and warnings for all paths.
 func LoggerWithLevel(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -75,13 +99,16 @@ func LoggerWithLevel(next http.Handler) http.Handler {
 		}
 
 		// Choose log level based on status
+		// Always log errors/warnings, but skip INFO for noisy endpoints
 		switch {
 		case rw.status >= 500:
 			slog.Error("http request", attrs...)
 		case rw.status >= 400:
 			slog.Warn("http request", attrs...)
 		default:
-			slog.Info("http request", attrs...)
+			if !shouldSkipLogging(r.URL.Path) {
+				slog.Info("http request", attrs...)
+			}
 		}
 	})
 }
