@@ -277,9 +277,15 @@ func Load() (*Config, error) {
 	}
 	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
 		cfg.Tracing.RedisURL = redisURL
+		cfg.Queue.RedisURL = redisURL // Also use for queue
 	}
 	if channel := os.Getenv("TRACE_CHANNEL"); channel != "" {
 		cfg.Tracing.Channel = channel
+	}
+
+	// Queue env override (takes precedence over REDIS_URL for queue)
+	if queueRedisURL := os.Getenv("QUEUE_REDIS_URL"); queueRedisURL != "" {
+		cfg.Queue.RedisURL = queueRedisURL
 	}
 
 	// Keycloak env overrides

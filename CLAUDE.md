@@ -26,15 +26,37 @@ IP: 90.156.230.49
 SSH: ssh root@90.156.230.49
 ```
 
-### Сервисы:
+### Docker Сервисы (АКТУАЛЬНО):
 ```
-duq.service      -> /opt/duq/current       -> :8081
-duq-gateway      -> /opt/duq-gateway       -> :8082
-PostgreSQL       -> duq database
-Redis            -> duq:* keys
+cd /opt/duq-deploy && ./deploy.sh deploy
+
+duq-core         -> :8081
+duq-gateway      -> :8082
+duq-admin        -> :5000
+duq-postgres     -> :5432
+duq-redis        -> :6379
+duq-keycloak     -> :8180
 ```
 
-## ДЕПЛОЙ GATEWAY (Go):
+### Legacy systemd (УСТАРЕЛО):
+```
+duq.service      -> /opt/duq/current       -> :8081  (ОТКЛЮЧЕН)
+duq-gateway      -> /opt/duq-gateway       -> :8082  (ОТКЛЮЧЕН)
+```
+
+## ДЕПЛОЙ GATEWAY (Docker - АКТУАЛЬНО):
+```bash
+# 1. Синхронизировать код
+rsync -avz --exclude='.git' /home/danny/Documents/projects/duq-gateway/ root@90.156.230.49:/opt/duq-deploy/duq-gateway/
+
+# 2. Пересобрать и перезапустить
+ssh root@90.156.230.49 "cd /opt/duq-deploy && docker compose build duq-gateway && docker compose up -d duq-gateway"
+
+# 3. Проверить
+ssh root@90.156.230.49 "docker compose -f /opt/duq-deploy/docker-compose.yml logs duq-gateway --tail=20"
+```
+
+## LEGACY ДЕПЛОЙ GATEWAY (Go - УСТАРЕЛО):
 ```bash
 # 1. Локальный билд (ОБЯЗАТЕЛЬНО с флагами оптимизации!)
 cd /home/danny/Documents/projects/duq-gateway
