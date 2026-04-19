@@ -56,6 +56,7 @@ func DefaultCSRFConfig() CSRFConfig {
 		ExcludePaths: []string{
 			"/health",
 			"/api/telegram/webhook",
+			"/api/telegram/send", // Internal API for sending alerts
 			"/api/github",
 			"/api/calendar",
 			"/api/gmail",
