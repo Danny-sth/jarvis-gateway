@@ -123,7 +123,7 @@ func main() {
 	}
 
 	// Phase 3: Callback dependencies (for async task results)
-	callbackDeps := handlers.NewCallbackDeps(cfg, channelRouter)
+	callbackDeps := handlers.NewCallbackDeps(cfg, channelRouter, credService)
 
 	// Rate limiters for public endpoints (prevent DoS)
 	// Telegram: 60 req/min per IP (Telegram servers use few IPs)
@@ -153,7 +153,7 @@ func main() {
 	gmailDeps := &handlers.GmailDeps{Config: cfg, QueueClient: queueClient}
 	githubDeps := &handlers.GitHubDeps{Config: cfg, QueueClient: queueClient}
 	customDeps := &handlers.CustomDeps{Config: cfg, QueueClient: queueClient}
-	mcpDeps := &handlers.MCPDeps{Config: cfg, QueueClient: queueClient}
+	mcpDeps := &handlers.MCPDeps{Config: cfg, QueueClient: queueClient, CredService: credService}
 
 	mux.HandleFunc("POST /api/calendar", middleware.RateLimitFunc(webhookLimiter, handlers.Calendar(calendarDeps)))
 	mux.HandleFunc("POST /api/gmail", middleware.RateLimitFunc(webhookLimiter, handlers.Gmail(gmailDeps)))

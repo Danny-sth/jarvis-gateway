@@ -28,6 +28,7 @@ type MCPResponse struct {
 type MCPDeps struct {
 	Config      *config.Config
 	QueueClient *queue.Client
+	CredService CredentialServiceInterface
 }
 
 // MCP creates a synchronous MCP handler
@@ -57,6 +58,19 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 		// Use owner's user ID for MCP requests
 		userID := deps.Config.TelegramChatID
 
+		// Parse telegram_id for credentials lookup
+		var telegramID int64
+		fmt.Sscanf(userID, "%d", &telegramID)
+
+		// Get user email from credentials (for email channel)
+		var userEmail string
+		if deps.CredService != nil {
+			if creds, err := deps.CredService.GetCredentials(telegramID, "google"); err == nil && creds != nil {
+				userEmail = creds.Email
+				log.Printf("[mcp] User %d has email: %s", telegramID, userEmail)
+			}
+		}
+
 		// Build task - reusing same structure as Telegram handler
 		callbackURL := fmt.Sprintf("http://%s/api/duq/callback", deps.Config.GatewayHost)
 
@@ -70,7 +84,9 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 				"output_channel": "mcp", // Different channel for logging
 			},
 			RequestMetadata: map[string]interface{}{
-				"source": "mcp",
+				"source":     "mcp",
+				"chat_id":    telegramID, // For fallback to Telegram
+				"user_email": userEmail,  // For email channel
 			},
 		}
 

@@ -1,33 +1,74 @@
 package channels
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
-	"os/exec"
+	"net/http"
+	"strings"
 )
 
 // EmailSender is an abstraction for sending emails (Dependency Inversion)
 type EmailSender interface {
-	Send(to, subject, body string) error
+	Send(to, subject, body, accessToken string) error
 }
 
-// GWSEmailSender sends emails via gws CLI
-type GWSEmailSender struct{}
+// GmailAPISender sends emails via Gmail API using OAuth tokens
+type GmailAPISender struct{}
 
-func (s *GWSEmailSender) Send(to, subject, body string) error {
-	cmd := exec.Command("gws", "gmail", "send",
-		"--to", to,
-		"--subject", subject,
-		"--body", body,
+func (s *GmailAPISender) Send(to, subject, body, accessToken string) error {
+	// Build RFC 2822 formatted email
+	emailContent := fmt.Sprintf(
+		"To: %s\r\n"+
+			"Subject: %s\r\n"+
+			"Content-Type: text/plain; charset=utf-8\r\n"+
+			"\r\n"+
+			"%s",
+		to, subject, body,
 	)
 
-	output, err := cmd.CombinedOutput()
+	// Base64url encode the email
+	encoded := base64.URLEncoding.EncodeToString([]byte(emailContent))
+	// Remove padding for Gmail API
+	encoded = strings.TrimRight(encoded, "=")
+
+	// Build request body
+	reqBody := map[string]string{"raw": encoded}
+	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
-		log.Printf("[email] gws send failed: %v, output: %s", err, string(output))
-		return fmt.Errorf("gws gmail send failed: %w", err)
+		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	log.Printf("[email] Sent email to %s, subject: %s", to, subject)
+	// Send via Gmail API
+	req, err := http.NewRequest(
+		"POST",
+		"https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+		bytes.NewBuffer(jsonBody),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.Printf("[email] Gmail API error: %s", string(respBody))
+		return fmt.Errorf("Gmail API error: %d", resp.StatusCode)
+	}
+
+	log.Printf("[email] Sent email to %s via Gmail API", to)
 	return nil
 }
 
@@ -50,7 +91,8 @@ func (c *EmailChannel) Name() string {
 }
 
 func (c *EmailChannel) CanHandle(ctx *ResponseContext) bool {
-	return ctx.UserEmail != ""
+	// Нужен email И OAuth токен
+	return ctx.UserEmail != "" && ctx.GoogleAccessToken != ""
 }
 
 func (c *EmailChannel) Send(ctx *ResponseContext) error {
@@ -63,7 +105,15 @@ func (c *EmailChannel) Send(ctx *ResponseContext) error {
 		return fmt.Errorf("no email configured and no fallback available")
 	}
 
-	err := c.sender.Send(ctx.UserEmail, "Duq Report", ctx.Response)
+	if ctx.GoogleAccessToken == "" {
+		if c.fallback != nil {
+			c.fallback.SendTextMessage(ctx.ChatID, "❌ OAuth токен не найден. Переподключи Google через /connect_google")
+			return c.fallback.Send(ctx)
+		}
+		return fmt.Errorf("no OAuth token available")
+	}
+
+	err := c.sender.Send(ctx.UserEmail, "Duq Report", ctx.Response, ctx.GoogleAccessToken)
 	if err != nil {
 		// Fallback to telegram with error + response
 		if c.fallback != nil {

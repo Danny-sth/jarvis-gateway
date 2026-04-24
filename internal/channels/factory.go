@@ -32,9 +32,9 @@ func (b *RouterBuilder) WithTelegram(botToken string) *RouterBuilder {
 	return b
 }
 
-// WithEmail adds email channel with gws sender
+// WithEmail adds email channel with Gmail API sender
 func (b *RouterBuilder) WithEmail() *RouterBuilder {
-	b.channels = append(b.channels, NewEmailChannel(&GWSEmailSender{}, b.telegram))
+	b.channels = append(b.channels, NewEmailChannel(&GmailAPISender{}, b.telegram))
 	return b
 }
 

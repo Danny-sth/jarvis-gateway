@@ -27,6 +27,7 @@ type CallbackPayload struct {
 type CallbackDeps struct {
 	Config        *config.Config
 	ChannelRouter *channels.Router
+	CredService   CredentialServiceInterface // Для OAuth токенов email канала
 }
 
 // DuqCallback handles callbacks from Duq worker.
@@ -111,9 +112,28 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 
 		// Get user email from metadata if available
 		var userEmail string
+		var googleAccessToken string
 		if payload.RequestMetadata != nil {
 			if email, ok := payload.RequestMetadata["user_email"].(string); ok {
 				userEmail = email
+			}
+		}
+
+		// Для email канала получаем OAuth токены из БД
+		if outputChannel == "email" && deps.CredService != nil {
+			creds, err := deps.CredService.GetCredentials(chatID, "google")
+			if err == nil && creds != nil {
+				// Автообновление токена если истёк
+				if err := refreshGoogleTokenIfNeeded(deps.Config, deps.CredService, creds); err != nil {
+					log.Printf("[callback] Failed to refresh token: %v", err)
+				}
+				googleAccessToken = creds.AccessToken
+				if userEmail == "" {
+					userEmail = creds.Email
+				}
+				log.Printf("[callback] Got OAuth credentials for email channel: email=%s", userEmail)
+			} else {
+				log.Printf("[callback] No OAuth credentials for user %d", chatID)
 			}
 		}
 
@@ -128,14 +148,15 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 		// Route response via channel router
 		go func() {
 			ctx := &channels.ResponseContext{
-				ChatID:      chatID,
-				UserID:      payload.UserID, // For WebSocket routing
-				UserEmail:   userEmail,
-				Response:    response,
-				IsVoice:     isVoice,
-				TaskID:      payload.TaskID, // For task correlation
-				VoiceData:   voiceData,
-				VoiceFormat: voiceFormat,
+				ChatID:            chatID,
+				UserID:            payload.UserID, // For WebSocket routing
+				UserEmail:         userEmail,
+				Response:          response,
+				IsVoice:           isVoice,
+				TaskID:            payload.TaskID, // For task correlation
+				VoiceData:         voiceData,
+				VoiceFormat:       voiceFormat,
+				GoogleAccessToken: googleAccessToken,
 			}
 
 			if deps.ChannelRouter != nil {
@@ -163,9 +184,10 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 }
 
 // NewCallbackDeps creates CallbackDeps from existing services
-func NewCallbackDeps(cfg *config.Config, channelRouter *channels.Router) *CallbackDeps {
+func NewCallbackDeps(cfg *config.Config, channelRouter *channels.Router, credService CredentialServiceInterface) *CallbackDeps {
 	return &CallbackDeps{
 		Config:        cfg,
 		ChannelRouter: channelRouter,
+		CredService:   credService,
 	}
 }

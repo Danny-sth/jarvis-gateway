@@ -19,6 +19,10 @@ type ResponseContext struct {
 	VoicePriority string // "high", "normal", or "skip"
 	VoiceData     []byte // Audio bytes (MP3 from Duq)
 	VoiceFormat   string // Audio format (default: "mp3")
+
+	// OAuth credentials for email channel
+	GoogleAccessToken  string
+	GoogleRefreshToken string
 }
 
 // Channel is the interface for output channels (Open/Closed, Dependency Inversion)
