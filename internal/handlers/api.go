@@ -98,18 +98,12 @@ func ProcessMessage(ctx context.Context, deps *APIDeps, req *MessageRequest) (*A
 	// Callback URL
 	callbackURL := fmt.Sprintf("http://%s/api/duq/callback", deps.Config.GatewayHost)
 
-	// Determine output channel based on source
-	// Android gets response via polling, not channel routing
-	outputChannel := "telegram"
-	if req.Source == "android" || req.Source == "mobile" || req.Source == "api" {
-		outputChannel = "silent" // Don't send via telegram/email, client polls
-	}
-
 	// Build task payload
+	// Note: output_channel not set here - Duq agent decides where to respond
+	// via select_output_channel tool based on context
 	payload := map[string]interface{}{
-		"message":        req.Message,
-		"output_channel": outputChannel,
-		"allowed_tools":  allowedTools,
+		"message":       req.Message,
+		"allowed_tools": allowedTools,
 		"user_preferences": map[string]string{
 			"timezone":           prefs.Timezone,
 			"preferred_language": prefs.PreferredLanguage,
