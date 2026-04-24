@@ -5,13 +5,13 @@ go 1.25.7
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/caddyserver/certmagic v0.21.7
+	github.com/coder/websocket v1.8.14
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.12.3
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/crypto v0.49.0
-	duq-tracing v0.0.0
 )
 
 require (

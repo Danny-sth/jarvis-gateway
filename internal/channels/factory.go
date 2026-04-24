@@ -1,10 +1,13 @@
 package channels
 
+import "duq-gateway/internal/websocket"
+
 // RouterBuilder simplifies router construction
 // Usage:
 //
 //	router := channels.NewBuilder().
 //	    WithTelegram(botToken).
+//	    WithAndroid(wsHub).
 //	    WithEmail().
 //	    WithObsidian().
 //	    WithSilent().
@@ -50,6 +53,12 @@ func (b *RouterBuilder) WithObsidian() *RouterBuilder {
 // WithSilent adds silent channel
 func (b *RouterBuilder) WithSilent() *RouterBuilder {
 	b.channels = append(b.channels, NewSilentChannel())
+	return b
+}
+
+// WithAndroid adds android WebSocket channel
+func (b *RouterBuilder) WithAndroid(hub *websocket.Hub) *RouterBuilder {
+	b.channels = append(b.channels, NewAndroidChannel(hub, b.telegram))
 	return b
 }
 

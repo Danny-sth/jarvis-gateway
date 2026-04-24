@@ -23,6 +23,7 @@ import (
 	"duq-gateway/internal/queue"
 	"duq-gateway/internal/rbac"
 	"duq-gateway/internal/registration"
+	"duq-gateway/internal/websocket"
 )
 
 func main() {
@@ -76,16 +77,26 @@ func main() {
 	rbacService := rbac.NewService(dbClient.DB(), cfg.Timeouts.RBACCacheTTLMin)
 	credService := credentials.NewService(dbClient.DB())
 
+	// Graceful shutdown context (created early for WebSocket Hub)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// WebSocket Hub for real-time communication with mobile clients
+	wsHub := websocket.NewHub()
+	go wsHub.Run(ctx)
+	log.Printf("[websocket] Hub started")
+
 	// Build channel router (SOLID: easily extensible with new channels)
 	// Note: TTS is done by Duq, channel only converts MP3→OGG
 	channelRouter := channels.NewBuilder().
 		WithTelegram(cfg.Telegram.BotToken).
+		WithAndroid(wsHub). // Android channel via WebSocket
 		WithEmail().
 		WithObsidian().
 		WithSilent().
 		Build()
 
-	log.Printf("[channels] Router initialized with telegram, email, obsidian, silent channels")
+	log.Printf("[channels] Router initialized with telegram, android, email, obsidian, silent channels")
 
 	// Create unified registration service
 	registrationService := registration.NewService(cfg, dbClient)
@@ -207,6 +218,10 @@ func main() {
 	}
 	mux.HandleFunc("POST /api/message", middleware.KeycloakAuth(cfg, dbClient, handlers.UnifiedAPI(apiDeps)))
 	mux.HandleFunc("GET /api/task/{id}", middleware.KeycloakAuth(cfg, dbClient, handlers.GetTaskStatus(apiDeps)))
+
+	// WebSocket endpoint for real-time communication with mobile clients
+	// Auth via query param token or Authorization header
+	mux.HandleFunc("GET /ws", websocket.Handler(wsHub, cfg))
 
 	// Admin Panel Reverse Proxy (configurable via ADMIN_URL env)
 	adminURL, _ := url.Parse(cfg.AdminURL)
@@ -360,8 +375,7 @@ func main() {
 	handler = middleware.CSRF(csrfConfig, csrfStore)(handler)
 	handler = middleware.Logger(handler)
 
-	// Graceful shutdown context
-	ctx, cancel := context.WithCancel(context.Background())
+	// Signal handler for graceful shutdown
 	go func() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)

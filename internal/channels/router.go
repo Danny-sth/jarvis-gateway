@@ -8,9 +8,11 @@ import (
 // ResponseContext contains all info needed to route a response
 type ResponseContext struct {
 	ChatID    int64
+	UserID    string // Keycloak sub or telegram_id
 	UserEmail string
 	Response  string
 	IsVoice   bool
+	TaskID    string // Task ID for correlation
 
 	// Voice-aware fields (from Duq response)
 	OutputType    string // "text", "voice", or "both"

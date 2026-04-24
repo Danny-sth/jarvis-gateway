@@ -129,9 +129,11 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 		go func() {
 			ctx := &channels.ResponseContext{
 				ChatID:      chatID,
+				UserID:      payload.UserID, // For WebSocket routing
 				UserEmail:   userEmail,
 				Response:    response,
 				IsVoice:     isVoice,
+				TaskID:      payload.TaskID, // For task correlation
 				VoiceData:   voiceData,
 				VoiceFormat: voiceFormat,
 			}

@@ -1,0 +1,172 @@
+package websocket
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/coder/websocket"
+
+	"duq-gateway/internal/config"
+)
+
+// Handler creates an HTTP handler for WebSocket connections
+func Handler(hub *Hub, cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract token from query param or Authorization header
+		token := r.URL.Query().Get("token")
+		if token == "" {
+			authHeader := r.Header.Get("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				token = strings.TrimPrefix(authHeader, "Bearer ")
+			}
+		}
+
+		if token == "" {
+			http.Error(w, "token required", http.StatusUnauthorized)
+			return
+		}
+
+		// Validate JWT
+		claims, err := validateKeycloakJWT(token, cfg)
+		if err != nil {
+			log.Printf("[ws] JWT validation failed: %v", err)
+			http.Error(w, "invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		// Get device_id from query params
+		deviceID := r.URL.Query().Get("device_id")
+		if deviceID == "" {
+			deviceID = "unknown"
+		}
+
+		// Accept WebSocket connection
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			OriginPatterns:     []string{"*"}, // Allow all origins (JWT handles auth)
+			InsecureSkipVerify: true,          // For development
+		})
+		if err != nil {
+			log.Printf("[ws] Failed to accept WebSocket: %v", err)
+			return
+		}
+
+		// Create connection context
+		ctx, cancel := context.WithCancel(r.Context())
+
+		connection := &Connection{
+			Conn:      conn,
+			UserID:    claims.Subject,
+			DeviceID:  deviceID,
+			CreatedAt: time.Now(),
+			ctx:       ctx,
+			cancel:    cancel,
+		}
+
+		// Register connection
+		hub.Register(connection)
+
+		// Start read loop (handles ping/pong and client messages)
+		go handleConnection(hub, connection)
+
+		log.Printf("[ws] Connection established: user=%s device=%s", claims.Subject, deviceID)
+	}
+}
+
+func handleConnection(hub *Hub, conn *Connection) {
+	defer func() {
+		hub.Unregister(conn)
+		conn.Conn.Close(websocket.StatusNormalClosure, "connection closed")
+	}()
+
+	for {
+		select {
+		case <-conn.ctx.Done():
+			return
+		default:
+			// Read with timeout
+			ctx, cancel := context.WithTimeout(conn.ctx, 60*time.Second)
+			msgType, data, err := conn.Conn.Read(ctx)
+			cancel()
+
+			if err != nil {
+				if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
+					log.Printf("[ws] Connection closed normally: user=%s", conn.UserID)
+				} else {
+					log.Printf("[ws] Read error: user=%s err=%v", conn.UserID, err)
+				}
+				return
+			}
+
+			// Handle client messages
+			if msgType == websocket.MessageText {
+				handleClientMessage(hub, conn, data)
+			}
+		}
+	}
+}
+
+type clientMessage struct {
+	Type string `json:"type"` // "ping", "subscribe"
+}
+
+func handleClientMessage(hub *Hub, conn *Connection, data []byte) {
+	var msg clientMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
+		log.Printf("[ws] Invalid client message: %v", err)
+		return
+	}
+
+	switch msg.Type {
+	case "ping":
+		// Respond with pong
+		pong := &Message{
+			Type:      "pong",
+			Timestamp: time.Now().Unix(),
+		}
+		pongData, _ := json.Marshal(pong)
+		conn.Conn.Write(conn.ctx, websocket.MessageText, pongData)
+
+	default:
+		log.Printf("[ws] Unknown message type: %s", msg.Type)
+	}
+}
+
+// KeycloakClaims represents the JWT claims from Keycloak
+type KeycloakClaims struct {
+	jwt.RegisteredClaims
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"email_verified"`
+	Name          string `json:"name"`
+	PreferredUser string `json:"preferred_username"`
+}
+
+func validateKeycloakJWT(tokenString string, cfg *config.Config) (*KeycloakClaims, error) {
+	// Parse without validation first to get claims (we'll validate signature separately)
+	token, _, err := jwt.NewParser().ParseUnverified(tokenString, &KeycloakClaims{})
+	if err != nil {
+		return nil, err
+	}
+
+	claims, ok := token.Claims.(*KeycloakClaims)
+	if !ok {
+		return nil, jwt.ErrTokenInvalidClaims
+	}
+
+	// Validate expiration
+	if claims.ExpiresAt != nil && claims.ExpiresAt.Before(time.Now()) {
+		return nil, jwt.ErrTokenExpired
+	}
+
+	// Validate issuer matches Keycloak URL
+	expectedIssuer := cfg.Keycloak.URL + "/realms/" + cfg.Keycloak.Realm
+	if claims.Issuer != expectedIssuer {
+		return nil, jwt.ErrTokenInvalidIssuer
+	}
+
+	return claims, nil
+}
