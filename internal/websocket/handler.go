@@ -84,31 +84,23 @@ func handleConnection(hub *Hub, conn *Connection) {
 		conn.Conn.Close(websocket.StatusNormalClosure, "connection closed")
 	}()
 
+	// Read loop - blocks until message received or context cancelled
+	// OkHttp sends WebSocket-level pings which the library handles automatically
 	for {
-		select {
-		case <-conn.ctx.Done():
+		msgType, data, err := conn.Conn.Read(conn.ctx)
+		if err != nil {
+			if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
+				log.Printf("[ws] Connection closed normally: user=%s", conn.UserID)
+			} else if conn.ctx.Err() != nil {
+				log.Printf("[ws] Connection context cancelled: user=%s", conn.UserID)
+			} else {
+				log.Printf("[ws] Read error: user=%s err=%v", conn.UserID, err)
+			}
 			return
-		default:
-			// Read without timeout - connection stays open until client disconnects
-			// OkHttp sends WebSocket-level pings which the library handles automatically
-			msgType, data, err := conn.Conn.Read(conn.ctx)
+		}
 
-			if err != nil {
-				if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
-					log.Printf("[ws] Connection closed normally: user=%s", conn.UserID)
-				} else if conn.ctx.Err() != nil {
-					// Context cancelled - graceful shutdown
-					log.Printf("[ws] Connection context cancelled: user=%s", conn.UserID)
-				} else {
-					log.Printf("[ws] Read error: user=%s err=%v", conn.UserID, err)
-				}
-				return
-			}
-
-			// Handle client messages
-			if msgType == websocket.MessageText {
-				handleClientMessage(hub, conn, data)
-			}
+		if msgType == websocket.MessageText {
+			handleClientMessage(hub, conn, data)
 		}
 	}
 }
