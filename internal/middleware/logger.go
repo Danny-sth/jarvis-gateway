@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"bufio"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -46,6 +48,21 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	n, err := rw.ResponseWriter.Write(b)
 	rw.size += n
 	return n, err
+}
+
+// Hijack implements http.Hijacker interface for WebSocket support
+func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := rw.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, http.ErrNotSupported
+}
+
+// Flush implements http.Flusher interface for streaming support (SSE)
+func (rw *responseWriter) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // Logger returns a middleware that logs HTTP requests using structured logging (slog).

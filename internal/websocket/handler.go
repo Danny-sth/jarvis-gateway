@@ -55,8 +55,9 @@ func Handler(hub *Hub, cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		// Create connection context
-		ctx, cancel := context.WithCancel(r.Context())
+		// Create connection context (independent of HTTP request context)
+		// r.Context() gets cancelled when handler returns, so use Background()
+		ctx, cancel := context.WithCancel(context.Background())
 
 		connection := &Connection{
 			Conn:      conn,
@@ -88,14 +89,16 @@ func handleConnection(hub *Hub, conn *Connection) {
 		case <-conn.ctx.Done():
 			return
 		default:
-			// Read with timeout
-			ctx, cancel := context.WithTimeout(conn.ctx, 60*time.Second)
-			msgType, data, err := conn.Conn.Read(ctx)
-			cancel()
+			// Read without timeout - connection stays open until client disconnects
+			// OkHttp sends WebSocket-level pings which the library handles automatically
+			msgType, data, err := conn.Conn.Read(conn.ctx)
 
 			if err != nil {
 				if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
 					log.Printf("[ws] Connection closed normally: user=%s", conn.UserID)
+				} else if conn.ctx.Err() != nil {
+					// Context cancelled - graceful shutdown
+					log.Printf("[ws] Connection context cancelled: user=%s", conn.UserID)
 				} else {
 					log.Printf("[ws] Read error: user=%s err=%v", conn.UserID, err)
 				}
