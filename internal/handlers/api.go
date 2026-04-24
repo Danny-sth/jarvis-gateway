@@ -98,10 +98,17 @@ func ProcessMessage(ctx context.Context, deps *APIDeps, req *MessageRequest) (*A
 	// Callback URL
 	callbackURL := fmt.Sprintf("http://%s/api/duq/callback", deps.Config.GatewayHost)
 
+	// Determine output channel based on source
+	// Android gets response via polling, not channel routing
+	outputChannel := "telegram"
+	if req.Source == "android" || req.Source == "mobile" || req.Source == "api" {
+		outputChannel = "silent" // Don't send via telegram/email, client polls
+	}
+
 	// Build task payload
 	payload := map[string]interface{}{
 		"message":        req.Message,
-		"output_channel": "telegram",
+		"output_channel": outputChannel,
 		"allowed_tools":  allowedTools,
 		"user_preferences": map[string]string{
 			"timezone":           prefs.Timezone,
@@ -198,26 +205,33 @@ func GetTaskStatus(deps *APIDeps) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
+		resp := TaskStatusResponse{TaskID: taskID}
 
-		// Check task status
-		status, err := deps.QueueClient.GetTaskStatus(ctx, taskID)
-		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(TaskStatusResponse{TaskID: taskID, Error: "task not found"})
-			return
-		}
-
-		resp := TaskStatusResponse{
-			TaskID: taskID,
-			Status: status,
-		}
-
-		// If completed, try to get response
-		if status == "COMPLETED" || status == "SUCCESS" {
-			if response, err := deps.QueueClient.GetTaskResponse(ctx, taskID); err == nil && response != nil {
-				resp.Response = response
+		// First check if response exists (Duq worker stores here when done)
+		if response, err := deps.QueueClient.GetTaskResponse(ctx, taskID); err == nil && response != nil {
+			// Response exists - task completed
+			if success, ok := response["success"].(bool); ok && success {
+				resp.Status = "COMPLETED"
+				// Extract result which contains voice_data
+				if result, ok := response["result"].(map[string]interface{}); ok {
+					resp.Response = result
+				}
+			} else {
+				resp.Status = "FAILED"
+				if errMsg, ok := response["error"].(string); ok {
+					resp.Error = errMsg
+				}
 			}
+		} else {
+			// No response yet - check task status in hash
+			status, err := deps.QueueClient.GetTaskStatus(ctx, taskID)
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				json.NewEncoder(w).Encode(TaskStatusResponse{TaskID: taskID, Error: "task not found"})
+				return
+			}
+			resp.Status = status
 		}
 
 		w.Header().Set("Content-Type", "application/json")
