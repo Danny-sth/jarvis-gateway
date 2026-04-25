@@ -127,7 +127,9 @@ func GitHub(deps *GitHubDeps) http.HandlerFunc {
 }
 
 func formatGitHubMessage(eventType string, webhook GitHubWebhook) string {
-	prefix := "[GitHub] "
+	// IMPORTANT: This is a notification that must be delivered to the user
+	// Agent decides HOW (telegram/email/etc) but NOT silent - this is important!
+	prefix := "[ВАЖНОЕ УВЕДОМЛЕНИЕ - GitHub] "
 	suffix := ""
 
 	switch eventType {
