@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"duq-gateway/internal/config"
+	"duq-gateway/internal/db"
 	"duq-gateway/internal/queue"
 )
 
@@ -27,6 +28,7 @@ type MCPResponse struct {
 // MCPDeps contains dependencies for MCP handler
 type MCPDeps struct {
 	Config      *config.Config
+	DBClient    *db.Client
 	QueueClient *queue.Client
 	CredService CredentialServiceInterface
 }

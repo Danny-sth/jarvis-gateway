@@ -13,6 +13,7 @@ type ResponseContext struct {
 	Response  string
 	IsVoice   bool
 	TaskID    string // Task ID for correlation
+	Source    string // Request source: "telegram", "android", "mcp"
 
 	// Voice-aware fields (from Duq response)
 	OutputType    string // "text", "voice", or "both"
@@ -68,11 +69,19 @@ func NewRouter(channels []Channel, defaultName string) *Router {
 
 // Route sends response to the specified channel
 // Gateway is a dumb executor - agent decides everything via tools (gmail_send, etc.)
-// Gateway just delivers agent's text response to Telegram
+// Gateway just delivers agent's text response to the originating channel
 func (r *Router) Route(channelName string, ctx *ResponseContext) error {
-	// Default to telegram - agent uses gmail_send directly if wants email
+	// Agent SHOULD call select_output_channel - if not, fallback to source
 	if channelName == "" {
-		channelName = "telegram"
+		log.Printf("[router] WARNING: channel not set by agent, using source fallback: %s", ctx.Source)
+		switch ctx.Source {
+		case "android":
+			channelName = "android"
+		case "telegram":
+			channelName = "telegram"
+		default:
+			channelName = "telegram" // Default fallback
+		}
 	}
 
 	ch, ok := r.channels[channelName]

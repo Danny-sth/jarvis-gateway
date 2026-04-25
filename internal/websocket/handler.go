@@ -157,9 +157,14 @@ func validateKeycloakJWT(tokenString string, cfg *config.Config) (*KeycloakClaim
 		return nil, jwt.ErrTokenExpired
 	}
 
-	// Validate issuer matches Keycloak URL
+	// Validate issuer - accept both external URL and internal URL for migration
+	// External: https://on-za-menya.online/realms/duq (new tokens)
+	// Internal: http://keycloak:8180/realms/duq (legacy tokens during migration)
 	expectedIssuer := cfg.Keycloak.URL + "/realms/" + cfg.Keycloak.Realm
-	if claims.Issuer != expectedIssuer {
+	internalIssuer := cfg.KeycloakInternalURL + "/realms/" + cfg.Keycloak.Realm
+
+	if claims.Issuer != expectedIssuer && claims.Issuer != internalIssuer {
+		log.Printf("[ws] Issuer mismatch: got=%s, expected=%s or %s", claims.Issuer, expectedIssuer, internalIssuer)
 		return nil, jwt.ErrTokenInvalidIssuer
 	}
 

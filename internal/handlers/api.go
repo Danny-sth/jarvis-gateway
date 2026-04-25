@@ -58,6 +58,24 @@ func ProcessMessage(ctx context.Context, deps *APIDeps, req *MessageRequest) (*A
 
 	log.Printf("[api] user=%s source=%s msg=%q", req.UserID, req.Source, truncMsg(req.Message, 50))
 
+	// Get or create user in DB to get db_user_id
+	var dbUserID int64
+	user, err := deps.DBClient.GetUserByTelegramID(telegramID)
+	if err != nil {
+		log.Printf("[api] Error getting user: %v", err)
+	}
+	if user != nil {
+		dbUserID = user.ID
+	} else {
+		// Create user if not exists
+		newUser, err := deps.DBClient.CreateUserFromTelegram(telegramID, "", "", "")
+		if err != nil {
+			log.Printf("[api] Error creating user: %v", err)
+		} else {
+			dbUserID = newUser.ID
+		}
+	}
+
 	// Ensure user exists in RBAC
 	if deps.RBACService != nil {
 		deps.RBACService.EnsureUser(telegramID, "", "", "")
@@ -129,10 +147,11 @@ func ProcessMessage(ctx context.Context, deps *APIDeps, req *MessageRequest) (*A
 		CallbackURL: callbackURL,
 		Payload:     payload,
 		RequestMetadata: map[string]interface{}{
-			"chat_id":    req.ChatID,
-			"user_email": userEmail,
-			"is_voice":   req.IsVoice,
-			"source":     req.Source,
+			"chat_id":     req.ChatID,
+			"db_user_id":  dbUserID,
+			"user_email":  userEmail,
+			"is_voice":    req.IsVoice,
+			"source":      req.Source,
 		},
 	}
 

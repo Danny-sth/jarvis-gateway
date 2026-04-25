@@ -137,11 +137,15 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 			}
 		}
 
-		// Check if this was a voice message
+		// Check if this was a voice message and extract source
 		isVoice := false
+		source := "telegram" // Default source
 		if payload.RequestMetadata != nil {
 			if v, ok := payload.RequestMetadata["is_voice"].(bool); ok {
 				isVoice = v
+			}
+			if s, ok := payload.RequestMetadata["source"].(string); ok && s != "" {
+				source = s
 			}
 		}
 
@@ -154,6 +158,7 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 				Response:          response,
 				IsVoice:           isVoice,
 				TaskID:            payload.TaskID, // For task correlation
+				Source:            source,         // For channel routing
 				VoiceData:         voiceData,
 				VoiceFormat:       voiceFormat,
 				GoogleAccessToken: googleAccessToken,
@@ -175,8 +180,13 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 		if payload.ExecutionTimeMs != nil {
 			executionTime = fmt.Sprintf("%dms", *payload.ExecutionTimeMs)
 		}
-		log.Printf("[callback] Delivered task_id=%s to channel=%s (exec_time=%s)",
-			payload.TaskID, outputChannel, executionTime)
+		// Log with actual channel (use source if outputChannel empty)
+		actualChannel := outputChannel
+		if actualChannel == "" {
+			actualChannel = source
+		}
+		log.Printf("[callback] Delivered task_id=%s to channel=%s source=%s (exec_time=%s)",
+			payload.TaskID, actualChannel, source, executionTime)
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"ok":true}`))
