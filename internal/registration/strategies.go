@@ -8,6 +8,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"duq-gateway/internal/config"
 	"duq-gateway/internal/db"
+	"duq-gateway/internal/keycloak"
 )
 
 // Strategy defines the interface for registration strategies
@@ -24,12 +25,16 @@ type Strategy interface {
 
 // TelegramStrategy handles Telegram-based registration
 type TelegramStrategy struct {
-	dbClient *db.Client
+	dbClient      *db.Client
+	keycloakAdmin *keycloak.AdminService
 }
 
 // NewTelegramStrategy creates a new Telegram strategy
-func NewTelegramStrategy(dbClient *db.Client) *TelegramStrategy {
-	return &TelegramStrategy{dbClient: dbClient}
+func NewTelegramStrategy(dbClient *db.Client, keycloakAdmin *keycloak.AdminService) *TelegramStrategy {
+	return &TelegramStrategy{
+		dbClient:      dbClient,
+		keycloakAdmin: keycloakAdmin,
+	}
 }
 
 func (s *TelegramStrategy) Validate(req *Request) error {
@@ -60,13 +65,32 @@ func (s *TelegramStrategy) Register(ctx context.Context, req *Request) (*User, e
 		}
 	}
 
-	// Create new user
+	// Create new user in local database
 	dbUser, err := s.dbClient.CreateUserFromTelegram(*req.TelegramID, req.Username, req.FirstName, req.LastName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create telegram user: %w", err)
 	}
 
-	log.Printf("[registration] Created Telegram user: id=%d, telegram_id=%d", dbUser.ID, dbUser.TelegramID)
+	log.Printf("[registration] Created Telegram user in DB: id=%d, telegram_id=%d", dbUser.ID, dbUser.TelegramID)
+
+	// Also create user in Keycloak (for Android app authentication)
+	if s.keycloakAdmin != nil && s.keycloakAdmin.IsEnabled() {
+		kcUser, err := s.keycloakAdmin.CreateUserFromTelegram(*req.TelegramID, req.Username, req.FirstName, req.LastName)
+		if err != nil {
+			// Log error but don't fail registration - user can still use Telegram
+			log.Printf("[registration] Warning: failed to create Keycloak user: %v", err)
+		} else if kcUser != nil {
+			log.Printf("[registration] Created Keycloak user: id=%s, telegram_id=%d", kcUser.ID, *req.TelegramID)
+
+			// Update local user with keycloak_sub if we got it
+			if kcUser.ID != "" {
+				updateErr := s.dbClient.UpdateUserKeycloakSub(dbUser.ID, kcUser.ID)
+				if updateErr != nil {
+					log.Printf("[registration] Warning: failed to update keycloak_sub: %v", updateErr)
+				}
+			}
+		}
+	}
 
 	return &User{
 		ID:                dbUser.ID,

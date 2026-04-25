@@ -11,6 +11,7 @@ import (
 
 	"duq-gateway/internal/config"
 	"duq-gateway/internal/db"
+	"duq-gateway/internal/keycloak"
 )
 
 // Service orchestrates the registration process
@@ -25,11 +26,11 @@ type Service struct {
 }
 
 // NewService creates a new registration service
-func NewService(cfg *config.Config, dbClient *db.Client) *Service {
+func NewService(cfg *config.Config, dbClient *db.Client, keycloakAdmin *keycloak.AdminService) *Service {
 	return &Service{
 		cfg:              cfg,
 		dbClient:         dbClient,
-		telegramStrategy: NewTelegramStrategy(dbClient),
+		telegramStrategy: NewTelegramStrategy(dbClient, keycloakAdmin),
 		emailStrategy:    NewEmailStrategy(cfg, dbClient),
 		keycloakStrategy: NewKeycloakStrategy(cfg, dbClient),
 	}

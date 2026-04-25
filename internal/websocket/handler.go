@@ -59,9 +59,17 @@ func Handler(hub *Hub, cfg *config.Config) http.HandlerFunc {
 		// r.Context() gets cancelled when handler returns, so use Background()
 		ctx, cancel := context.WithCancel(context.Background())
 
+		// Use telegram_id if available (from Keycloak user attribute mapper)
+		// Falls back to keycloak sub (UUID) if telegram_id not set
+		userID := claims.TelegramID
+		if userID == "" {
+			userID = claims.Subject
+			log.Printf("[ws] Warning: telegram_id not in JWT, using sub: %s", userID)
+		}
+
 		connection := &Connection{
 			Conn:      conn,
-			UserID:    claims.Subject,
+			UserID:    userID,
 			DeviceID:  deviceID,
 			CreatedAt: time.Now(),
 			ctx:       ctx,
@@ -74,7 +82,7 @@ func Handler(hub *Hub, cfg *config.Config) http.HandlerFunc {
 		// Start read loop (handles ping/pong and client messages)
 		go handleConnection(hub, connection)
 
-		log.Printf("[ws] Connection established: user=%s device=%s", claims.Subject, deviceID)
+		log.Printf("[ws] Connection established: user=%s device=%s", userID, deviceID)
 	}
 }
 
@@ -138,6 +146,7 @@ type KeycloakClaims struct {
 	EmailVerified bool   `json:"email_verified"`
 	Name          string `json:"name"`
 	PreferredUser string `json:"preferred_username"`
+	TelegramID    string `json:"telegram_id"` // Custom claim from user attribute
 }
 
 func validateKeycloakJWT(tokenString string, cfg *config.Config) (*KeycloakClaims, error) {

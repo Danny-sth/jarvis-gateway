@@ -19,6 +19,7 @@ import (
 	"duq-gateway/internal/credentials"
 	"duq-gateway/internal/db"
 	"duq-gateway/internal/handlers"
+	"duq-gateway/internal/keycloak"
 	"duq-gateway/internal/middleware"
 	"duq-gateway/internal/queue"
 	"duq-gateway/internal/rbac"
@@ -98,8 +99,14 @@ func main() {
 
 	log.Printf("[channels] Router initialized with telegram, android, email, obsidian, silent channels")
 
-	// Create unified registration service
-	registrationService := registration.NewService(cfg, dbClient)
+	// Initialize Keycloak admin service for user management (create users in Keycloak)
+	keycloakAdmin := keycloak.NewAdminService(cfg)
+	if keycloakAdmin.IsEnabled() {
+		log.Printf("[main] Keycloak admin service enabled for user management")
+	}
+
+	// Create unified registration service (with Keycloak integration)
+	registrationService := registration.NewService(cfg, dbClient, keycloakAdmin)
 	log.Printf("[registration] Unified registration service initialized")
 
 	// Create Telegram handler with full dependencies
@@ -185,7 +192,7 @@ func main() {
 	mux.HandleFunc("GET /api/auth/keycloak/userinfo", handlers.KeycloakUserInfo(cfg))
 
 	// Public Registration endpoints (rate limited to prevent brute force)
-	registrationDeps := handlers.NewRegistrationDeps(cfg, dbClient)
+	registrationDeps := handlers.NewRegistrationDeps(cfg, dbClient, keycloakAdmin)
 	mux.HandleFunc("POST /api/auth/register", middleware.RateLimitFunc(authLimiter, handlers.Register(registrationDeps)))
 	mux.HandleFunc("GET /api/auth/verify-email", middleware.RateLimitFunc(authLimiter, handlers.VerifyEmail(registrationDeps)))
 	mux.HandleFunc("POST /api/auth/resend-verification", middleware.RateLimitFunc(authLimiter, handlers.ResendVerification(registrationDeps)))

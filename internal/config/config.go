@@ -48,6 +48,9 @@ type KeycloakConfig struct {
 	ClientID     string `json:"client_id"`     // e.g., duq-gateway
 	ClientSecret string `json:"client_secret"` // from Keycloak
 	Enabled      bool   `json:"enabled"`       // Enable Keycloak auth
+	// Admin credentials for user management (service account)
+	AdminClientID     string `json:"admin_client_id"`     // e.g., duq-admin-service
+	AdminClientSecret string `json:"admin_client_secret"` // from Keycloak
 }
 
 type TLSConfig struct {
@@ -310,6 +313,12 @@ func Load() (*Config, error) {
 	}
 	if keycloakEnabled := os.Getenv("KEYCLOAK_ENABLED"); keycloakEnabled != "" {
 		cfg.Keycloak.Enabled = keycloakEnabled == "true" || keycloakEnabled == "1"
+	}
+	if keycloakAdminClientID := os.Getenv("KEYCLOAK_ADMIN_CLIENT_ID"); keycloakAdminClientID != "" {
+		cfg.Keycloak.AdminClientID = keycloakAdminClientID
+	}
+	if keycloakAdminClientSecret := os.Getenv("KEYCLOAK_ADMIN_CLIENT_SECRET"); keycloakAdminClientSecret != "" {
+		cfg.Keycloak.AdminClientSecret = keycloakAdminClientSecret
 	}
 
 	// User defaults env overrides

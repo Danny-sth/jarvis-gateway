@@ -303,3 +303,20 @@ func (c *Client) DeleteEmailVerificationTokenByUserID(userID int64) error {
 	return nil
 }
 
+// UpdateUserKeycloakSub updates the keycloak_sub field for a user
+func (c *Client) UpdateUserKeycloakSub(userID int64, keycloakSub string) error {
+	query := `UPDATE users SET keycloak_sub = $1, updated_at = NOW() WHERE id = $2`
+	result, err := c.db.Exec(query, keycloakSub, userID)
+	if err != nil {
+		return fmt.Errorf("failed to update keycloak_sub: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("user not found")
+	}
+
+	log.Printf("[db] Updated keycloak_sub for user %d: %s", userID, keycloakSub)
+	return nil
+}
+

@@ -7,6 +7,7 @@ import (
 
 	"duq-gateway/internal/config"
 	"duq-gateway/internal/db"
+	"duq-gateway/internal/keycloak"
 	"duq-gateway/internal/registration"
 )
 
@@ -18,11 +19,11 @@ type RegistrationDeps struct {
 }
 
 // NewRegistrationDeps creates a new RegistrationDeps with the registration service
-func NewRegistrationDeps(cfg *config.Config, dbClient *db.Client) *RegistrationDeps {
+func NewRegistrationDeps(cfg *config.Config, dbClient *db.Client, keycloakAdmin *keycloak.AdminService) *RegistrationDeps {
 	return &RegistrationDeps{
 		Config:              cfg,
 		DBClient:            dbClient,
-		RegistrationService: registration.NewService(cfg, dbClient),
+		RegistrationService: registration.NewService(cfg, dbClient, keycloakAdmin),
 	}
 }
 
