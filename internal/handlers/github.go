@@ -129,8 +129,9 @@ func GitHub(deps *GitHubDeps) http.HandlerFunc {
 func formatGitHubMessage(eventType string, webhook GitHubWebhook) string {
 	// IMPORTANT: This is a notification that must be delivered to the user
 	// Agent decides HOW (telegram/email/etc) but NOT silent - this is important!
-	prefix := "[ВАЖНОЕ УВЕДОМЛЕНИЕ - GitHub] "
-	suffix := ""
+	// NOTE: suffix contains DIRECT INSTRUCTION for agent to relay this message
+	prefix := "[ВАЖНОЕ УВЕДОМЛЕНИЕ - GitHub]\n"
+	suffix := "\n\n---\nИНСТРУКЦИЯ: Перешли это уведомление владельцу в Telegram. Не пересказывай, не сокращай — просто перешли как есть."
 
 	switch eventType {
 	case "pull_request":
