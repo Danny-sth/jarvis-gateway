@@ -68,20 +68,14 @@ func NewRouter(channels []Channel, defaultName string) *Router {
 }
 
 // Route sends response to the specified channel
-// Gateway is a dumb executor - agent decides everything via tools (gmail_send, etc.)
-// Gateway just delivers agent's text response to the originating channel
+// Gateway is a dumb executor - agent decides everything via select_output_channel tool
+// Gateway just delivers agent's response to the channel specified by agent
 func (r *Router) Route(channelName string, ctx *ResponseContext) error {
-	// Agent SHOULD call select_output_channel - if not, fallback to source
+	// Channel MUST be set by agent (via select_output_channel) or by worker fallback
+	// Gateway does NOT decide routing - it just executes
 	if channelName == "" {
-		log.Printf("[router] WARNING: channel not set by agent, using source fallback: %s", ctx.Source)
-		switch ctx.Source {
-		case "android":
-			channelName = "android"
-		case "telegram":
-			channelName = "telegram"
-		default:
-			channelName = "telegram" // Default fallback
-		}
+		log.Printf("[router] ERROR: channel not specified, using default telegram")
+		channelName = "telegram"
 	}
 
 	ch, ok := r.channels[channelName]

@@ -64,6 +64,18 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 		var telegramID int64
 		fmt.Sscanf(userID, "%d", &telegramID)
 
+		// Get db_user_id for memory operations
+		var dbUserID int64
+		if deps.DBClient != nil {
+			user, err := deps.DBClient.GetUserByTelegramID(telegramID)
+			if err != nil {
+				log.Printf("[mcp] Error getting user: %v", err)
+			}
+			if user != nil {
+				dbUserID = user.ID
+			}
+		}
+
 		// Get user email from credentials (for email channel)
 		var userEmail string
 		if deps.CredService != nil {
@@ -86,9 +98,10 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 				"output_channel": "mcp", // Different channel for logging
 			},
 			RequestMetadata: map[string]interface{}{
-				"source":     "mcp",
-				"chat_id":    telegramID, // For fallback to Telegram
-				"user_email": userEmail,  // For email channel
+				"source":      "mcp",
+				"chat_id":     telegramID,  // For fallback to Telegram
+				"db_user_id":  dbUserID,    // For memory operations
+				"user_email":  userEmail,   // For email channel
 			},
 		}
 
