@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"sort"
@@ -47,20 +46,15 @@ type MessageResponse struct {
 func GetConversations(deps *HistoryDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Get user from context (set by KeycloakAuth middleware)
-		telegramID, ok := r.Context().Value("telegram_id").(int64)
-		if !ok || telegramID == 0 {
-			// Try as string
-			if telegramIDStr, ok := r.Context().Value("telegram_id").(string); ok && telegramIDStr != "" {
-				fmt.Sscanf(telegramIDStr, "%d", &telegramID)
-			}
-		}
-
-		if telegramID == 0 {
+		// Use keycloak_sub as primary identifier (matches duq-core)
+		userID, ok := r.Context().Value("keycloak_sub").(string)
+		if !ok || userID == "" {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 			return
 		}
 
-		userID := fmt.Sprintf("%d", telegramID)
+		// Get telegram_id for response (optional)
+		telegramID, _ := r.Context().Value("telegram_id").(int64)
 		log.Printf("[history] Getting conversations for user %s", userID)
 
 		ctx := r.Context()
@@ -129,15 +123,9 @@ func GetConversations(deps *HistoryDeps) http.HandlerFunc {
 // GET /api/conversations/{session_id}/messages
 func GetMessages(deps *HistoryDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Get user from context
-		telegramID, ok := r.Context().Value("telegram_id").(int64)
-		if !ok || telegramID == 0 {
-			if telegramIDStr, ok := r.Context().Value("telegram_id").(string); ok && telegramIDStr != "" {
-				fmt.Sscanf(telegramIDStr, "%d", &telegramID)
-			}
-		}
-
-		if telegramID == 0 {
+		// Get user from context - use keycloak_sub (matches duq-core)
+		userID, ok := r.Context().Value("keycloak_sub").(string)
+		if !ok || userID == "" {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 			return
 		}
@@ -147,8 +135,6 @@ func GetMessages(deps *HistoryDeps) http.HandlerFunc {
 			http.Error(w, `{"error":"session_id required"}`, http.StatusBadRequest)
 			return
 		}
-
-		userID := fmt.Sprintf("%d", telegramID)
 		log.Printf("[history] Getting messages for user %s, session %s", userID, sessionID)
 
 		ctx := r.Context()
@@ -197,18 +183,15 @@ func GetMessages(deps *HistoryDeps) http.HandlerFunc {
 // POST /api/conversations
 func CreateConversation(deps *HistoryDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Get user from context
-		telegramID, ok := r.Context().Value("telegram_id").(int64)
-		if !ok || telegramID == 0 {
-			if telegramIDStr, ok := r.Context().Value("telegram_id").(string); ok && telegramIDStr != "" {
-				fmt.Sscanf(telegramIDStr, "%d", &telegramID)
-			}
-		}
-
-		if telegramID == 0 {
+		// Get user from context - use keycloak_sub
+		userID, ok := r.Context().Value("keycloak_sub").(string)
+		if !ok || userID == "" {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 			return
 		}
+
+		// Get telegram_id for response (optional)
+		telegramID, _ := r.Context().Value("telegram_id").(int64)
 
 		// New conversation = today's session
 		today := time.Now().UTC()
@@ -216,7 +199,7 @@ func CreateConversation(deps *HistoryDeps) http.HandlerFunc {
 
 		conv := ConversationResponse{
 			ID:            sessionID,
-			UserID:        telegramID,
+			UserID:        telegramID, // Keep for backwards compat, but userID is keycloak_sub
 			Title:         formatDateTitle(today),
 			StartedAt:     today.Unix(),
 			LastMessageAt: today.Unix(),
@@ -225,7 +208,7 @@ func CreateConversation(deps *HistoryDeps) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(conv)
-		log.Printf("[history] Created conversation %s for user %d", sessionID, telegramID)
+		log.Printf("[history] Created conversation %s for user %s (telegram_id=%d)", sessionID, userID, telegramID)
 	}
 }
 
