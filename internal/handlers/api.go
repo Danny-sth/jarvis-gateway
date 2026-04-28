@@ -58,23 +58,19 @@ func ProcessMessage(ctx context.Context, deps *APIDeps, req *MessageRequest) (*A
 
 	log.Printf("[api] user=%s source=%s msg=%q", req.UserID, req.Source, truncMsg(req.Message, 50))
 
-	// Get or create user in DB to get db_user_id
+	// Get user from DB - user MUST already exist (created via registration flow)
+	// Keycloak is the primary source of truth - users must register first
 	var dbUserID int64
 	user, err := deps.DBClient.GetUserByTelegramID(telegramID)
 	if err != nil {
 		log.Printf("[api] Error getting user: %v", err)
+		return &APIResponse{Error: "failed to lookup user"}, fmt.Errorf("db error: %w", err)
 	}
-	if user != nil {
-		dbUserID = user.ID
-	} else {
-		// Create user if not exists
-		newUser, err := deps.DBClient.CreateUserFromTelegram(telegramID, "", "", "")
-		if err != nil {
-			log.Printf("[api] Error creating user: %v", err)
-		} else {
-			dbUserID = newUser.ID
-		}
+	if user == nil {
+		log.Printf("[api] User not found: telegram_id=%d - user must register first", telegramID)
+		return &APIResponse{Error: "user not registered"}, fmt.Errorf("user not found, registration required")
 	}
+	dbUserID = user.ID
 
 	// Ensure user exists in RBAC
 	if deps.RBACService != nil {

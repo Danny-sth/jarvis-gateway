@@ -222,16 +222,17 @@ func TestCreateUserFromTelegram_Success(t *testing.T) {
 	defer client.db.Close()
 
 	telegramID := int64(123456)
+	keycloakSub := "kc-uuid-12345"
 	rows := sqlmock.NewRows([]string{
-		"id", "telegram_id", "username", "first_name", "last_name",
+		"id", "keycloak_sub", "telegram_id", "username", "first_name", "last_name",
 		"role", "is_active", "timezone", "preferred_language",
-	}).AddRow(1, telegramID, "newuser", "New", "User", "user", true, "UTC", "ru")
+	}).AddRow(1, keycloakSub, telegramID, "newuser", "New", "User", "user", true, "UTC", "ru")
 
 	mock.ExpectQuery(`INSERT INTO users`).
-		WithArgs(telegramID, "newuser", "New", "User").
+		WithArgs(keycloakSub, telegramID, "newuser", "New", "User").
 		WillReturnRows(rows)
 
-	user, err := client.CreateUserFromTelegram(telegramID, "newuser", "New", "User")
+	user, err := client.CreateUserFromTelegram(telegramID, "newuser", "New", "User", keycloakSub)
 
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -242,12 +243,28 @@ func TestCreateUserFromTelegram_Success(t *testing.T) {
 	if user.ID != 1 {
 		t.Errorf("expected ID 1, got %d", user.ID)
 	}
+	if user.KeycloakSub != keycloakSub {
+		t.Errorf("expected keycloak_sub %s, got %s", keycloakSub, user.KeycloakSub)
+	}
 	if user.Username != "newuser" {
 		t.Errorf("expected username newuser, got %s", user.Username)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestCreateUserFromTelegram_MissingKeycloakSub(t *testing.T) {
+	client, _ := newMockClient(t)
+	defer client.db.Close()
+
+	telegramID := int64(123456)
+
+	_, err := client.CreateUserFromTelegram(telegramID, "newuser", "New", "User", "")
+
+	if err == nil {
+		t.Error("expected error for missing keycloak_sub")
 	}
 }
 

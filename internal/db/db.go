@@ -84,6 +84,7 @@ func (c *Client) GetUserPreferencesByTelegramID(telegramID int64) *UserPreferenc
 // User represents a user record
 type User struct {
 	ID                int64
+	KeycloakSub       string // Keycloak subject ID - PRIMARY source of truth
 	TelegramID        *int64 // nullable - user may register via email/Keycloak only
 	Username          string
 	FirstName         string
@@ -108,15 +109,15 @@ func (c *Client) CheckUserExistsByTelegramID(telegramID int64) bool {
 
 // GetUserByTelegramID returns full user info by telegram_id
 func (c *Client) GetUserByTelegramID(telegramID int64) (*User, error) {
-	query := `SELECT id, telegram_id, COALESCE(username, ''), COALESCE(first_name, ''),
-	          COALESCE(last_name, ''), role, is_active,
+	query := `SELECT id, COALESCE(keycloak_sub, ''), telegram_id, COALESCE(username, ''),
+	          COALESCE(first_name, ''), COALESCE(last_name, ''), role, is_active,
 	          COALESCE(timezone, 'UTC'), COALESCE(preferred_language, 'ru')
 	          FROM users WHERE telegram_id = $1`
 
 	var user User
 	err := c.db.QueryRow(query, telegramID).Scan(
-		&user.ID, &user.TelegramID, &user.Username, &user.FirstName,
-		&user.LastName, &user.Role, &user.IsActive,
+		&user.ID, &user.KeycloakSub, &user.TelegramID, &user.Username,
+		&user.FirstName, &user.LastName, &user.Role, &user.IsActive,
 		&user.Timezone, &user.PreferredLanguage,
 	)
 	if err != nil {
@@ -130,15 +131,15 @@ func (c *Client) GetUserByTelegramID(telegramID int64) (*User, error) {
 
 // GetUserByID returns full user info by id
 func (c *Client) GetUserByID(userID int64) (*User, error) {
-	query := `SELECT id, telegram_id, COALESCE(username, ''), COALESCE(first_name, ''),
-	          COALESCE(last_name, ''), role, is_active,
+	query := `SELECT id, COALESCE(keycloak_sub, ''), telegram_id, COALESCE(username, ''),
+	          COALESCE(first_name, ''), COALESCE(last_name, ''), role, is_active,
 	          COALESCE(timezone, 'UTC'), COALESCE(preferred_language, 'ru')
 	          FROM users WHERE id = $1`
 
 	var user User
 	err := c.db.QueryRow(query, userID).Scan(
-		&user.ID, &user.TelegramID, &user.Username, &user.FirstName,
-		&user.LastName, &user.Role, &user.IsActive,
+		&user.ID, &user.KeycloakSub, &user.TelegramID, &user.Username,
+		&user.FirstName, &user.LastName, &user.Role, &user.IsActive,
 		&user.Timezone, &user.PreferredLanguage,
 	)
 	if err != nil {
@@ -151,30 +152,36 @@ func (c *Client) GetUserByID(userID int64) (*User, error) {
 }
 
 // CreateUserFromTelegram creates a new user from Telegram registration
+// keycloakSub is REQUIRED - Keycloak is the primary source of truth
 // Returns the created user or error
-func (c *Client) CreateUserFromTelegram(telegramID int64, username, firstName, lastName string) (*User, error) {
-	query := `INSERT INTO users (telegram_id, username, first_name, last_name, role, is_active, timezone, preferred_language, created_at, updated_at)
-	          VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, ''), 'user', true, 'UTC', 'ru', NOW(), NOW())
+func (c *Client) CreateUserFromTelegram(telegramID int64, username, firstName, lastName, keycloakSub string) (*User, error) {
+	if keycloakSub == "" {
+		return nil, fmt.Errorf("keycloak_sub is required")
+	}
+
+	query := `INSERT INTO users (keycloak_sub, telegram_id, username, first_name, last_name, role, is_active, timezone, preferred_language, created_at, updated_at)
+	          VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), NULLIF($5, ''), 'user', true, 'UTC', 'ru', NOW(), NOW())
 	          ON CONFLICT (telegram_id) DO UPDATE SET
+	            keycloak_sub = COALESCE(NULLIF(EXCLUDED.keycloak_sub, ''), users.keycloak_sub),
 	            username = COALESCE(NULLIF(EXCLUDED.username, ''), users.username),
 	            first_name = COALESCE(NULLIF(EXCLUDED.first_name, ''), users.first_name),
 	            last_name = COALESCE(NULLIF(EXCLUDED.last_name, ''), users.last_name),
 	            updated_at = NOW()
-	          RETURNING id, telegram_id, COALESCE(username, ''), COALESCE(first_name, ''),
+	          RETURNING id, keycloak_sub, telegram_id, COALESCE(username, ''), COALESCE(first_name, ''),
 	                    COALESCE(last_name, ''), role, is_active, timezone, preferred_language`
 
 	var user User
-	err := c.db.QueryRow(query, telegramID, username, firstName, lastName).Scan(
-		&user.ID, &user.TelegramID, &user.Username, &user.FirstName,
-		&user.LastName, &user.Role, &user.IsActive,
+	err := c.db.QueryRow(query, keycloakSub, telegramID, username, firstName, lastName).Scan(
+		&user.ID, &user.KeycloakSub, &user.TelegramID, &user.Username,
+		&user.FirstName, &user.LastName, &user.Role, &user.IsActive,
 		&user.Timezone, &user.PreferredLanguage,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	log.Printf("[db] Created/updated user from Telegram: id=%d, telegram_id=%v, username=%s",
-		user.ID, user.TelegramID, user.Username)
+	log.Printf("[db] Created/updated user from Telegram: id=%d, keycloak_sub=%s, telegram_id=%v, username=%s",
+		user.ID, user.KeycloakSub, user.TelegramID, user.Username)
 	return &user, nil
 }
 
