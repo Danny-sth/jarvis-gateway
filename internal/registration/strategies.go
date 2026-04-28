@@ -49,9 +49,10 @@ func (s *TelegramStrategy) Register(ctx context.Context, req *Request) (*User, e
 			return nil, fmt.Errorf("failed to get existing user: %w", err)
 		}
 		if dbUser != nil {
-			log.Printf("[registration] Telegram user already exists: telegram_id=%d", *req.TelegramID)
+			log.Printf("[registration] Telegram user already exists: telegram_id=%d, keycloak_sub=%s", *req.TelegramID, dbUser.KeycloakSub)
 			return &User{
 				ID:                dbUser.ID,
+				KeycloakSub:       dbUser.KeycloakSub,
 				TelegramID:        dbUser.TelegramID,
 				Username:          dbUser.Username,
 				FirstName:         dbUser.FirstName,
@@ -88,10 +89,11 @@ func (s *TelegramStrategy) Register(ctx context.Context, req *Request) (*User, e
 	}
 
 	log.Printf("[registration] Created Telegram user in DB: id=%d, keycloak_sub=%s, telegram_id=%v",
-		dbUser.ID, kcUser.ID, dbUser.TelegramID)
+		dbUser.ID, dbUser.KeycloakSub, dbUser.TelegramID)
 
 	return &User{
 		ID:                dbUser.ID,
+		KeycloakSub:       dbUser.KeycloakSub,
 		TelegramID:        dbUser.TelegramID,
 		Username:          dbUser.Username,
 		FirstName:         dbUser.FirstName,

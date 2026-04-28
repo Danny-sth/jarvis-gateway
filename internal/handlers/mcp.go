@@ -74,9 +74,7 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 			}
 			if user != nil {
 				dbUserID = user.ID
-				if user.KeycloakSub != nil {
-					keycloakSub = user.KeycloakSub.String()
-				}
+				keycloakSub = user.KeycloakSub
 			}
 		}
 

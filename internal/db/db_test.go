@@ -161,12 +161,13 @@ func TestGetUserByTelegramID_Success(t *testing.T) {
 	defer client.db.Close()
 
 	telegramID := int64(123456)
+	keycloakSub := "kc-uuid-12345"
 	rows := sqlmock.NewRows([]string{
-		"id", "telegram_id", "username", "first_name", "last_name",
+		"id", "keycloak_sub", "telegram_id", "username", "first_name", "last_name",
 		"role", "is_active", "timezone", "preferred_language",
-	}).AddRow(1, telegramID, "testuser", "Test", "User", "user", true, "UTC", "ru")
+	}).AddRow(1, keycloakSub, telegramID, "testuser", "Test", "User", "user", true, "UTC", "ru")
 
-	mock.ExpectQuery(`SELECT id, telegram_id, COALESCE\(username, ''\)`).
+	mock.ExpectQuery(`SELECT id, COALESCE\(keycloak_sub, ''\), telegram_id`).
 		WithArgs(telegramID).
 		WillReturnRows(rows)
 
@@ -180,6 +181,9 @@ func TestGetUserByTelegramID_Success(t *testing.T) {
 	}
 	if user.ID != 1 {
 		t.Errorf("expected ID 1, got %d", user.ID)
+	}
+	if user.KeycloakSub != keycloakSub {
+		t.Errorf("expected keycloak_sub %s, got %s", keycloakSub, user.KeycloakSub)
 	}
 	if user.Username != "testuser" {
 		t.Errorf("expected username testuser, got %s", user.Username)
@@ -199,7 +203,7 @@ func TestGetUserByTelegramID_NotFound(t *testing.T) {
 
 	telegramID := int64(999999)
 
-	mock.ExpectQuery(`SELECT id, telegram_id, COALESCE\(username, ''\)`).
+	mock.ExpectQuery(`SELECT id, COALESCE\(keycloak_sub, ''\), telegram_id`).
 		WithArgs(telegramID).
 		WillReturnError(sql.ErrNoRows)
 
@@ -633,9 +637,11 @@ func TestConfig_Fields(t *testing.T) {
 
 // Test User struct
 func TestUser_Fields(t *testing.T) {
+	telegramID := int64(123456)
 	user := User{
 		ID:                1,
-		TelegramID:        123456,
+		KeycloakSub:       "kc-uuid-test",
+		TelegramID:        &telegramID,
 		Username:          "testuser",
 		FirstName:         "Test",
 		LastName:          "User",
@@ -648,8 +654,11 @@ func TestUser_Fields(t *testing.T) {
 	if user.ID != 1 {
 		t.Errorf("expected ID 1, got %d", user.ID)
 	}
-	if user.TelegramID != 123456 {
-		t.Errorf("expected TelegramID 123456, got %d", user.TelegramID)
+	if user.KeycloakSub != "kc-uuid-test" {
+		t.Errorf("expected KeycloakSub kc-uuid-test, got %s", user.KeycloakSub)
+	}
+	if user.TelegramID == nil || *user.TelegramID != 123456 {
+		t.Errorf("expected TelegramID 123456, got %v", user.TelegramID)
 	}
 	if user.Role != "admin" {
 		t.Errorf("expected role admin, got %s", user.Role)

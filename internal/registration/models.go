@@ -34,6 +34,7 @@ type Request struct {
 // User represents a registered user
 type User struct {
 	ID                int64  `json:"id"`
+	KeycloakSub       string `json:"keycloak_sub"` // Primary source of truth
 	Email             string `json:"email,omitempty"`
 	TelegramID        *int64 `json:"telegram_id,omitempty"`
 	Username          string `json:"username,omitempty"`

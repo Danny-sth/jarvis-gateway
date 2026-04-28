@@ -302,6 +302,7 @@ func (s *Service) GetUserByTelegramID(telegramID int64) (*User, error) {
 
 	return &User{
 		ID:                dbUser.ID,
+		KeycloakSub:       dbUser.KeycloakSub,
 		TelegramID:        dbUser.TelegramID,
 		Username:          dbUser.Username,
 		FirstName:         dbUser.FirstName,
