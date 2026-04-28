@@ -99,11 +99,13 @@ func main() {
 
 	log.Printf("[channels] Router initialized with telegram, android, email, obsidian, silent channels")
 
-	// Initialize Keycloak admin service for user management (create users in Keycloak)
+	// Initialize Keycloak admin service for user management
+	// IMPORTANT: Keycloak is the PRIMARY SOURCE OF TRUTH for users - it MUST be configured
 	keycloakAdmin := keycloak.NewAdminService(cfg)
-	if keycloakAdmin.IsEnabled() {
-		log.Printf("[main] Keycloak admin service enabled for user management")
+	if !keycloakAdmin.IsConfigured() {
+		log.Fatal("[main] FATAL: Keycloak admin service is not configured. Keycloak is required for user management.")
 	}
+	log.Printf("[main] Keycloak admin service configured and ready")
 
 	// Create unified registration service (with Keycloak integration)
 	registrationService := registration.NewService(cfg, dbClient, keycloakAdmin)

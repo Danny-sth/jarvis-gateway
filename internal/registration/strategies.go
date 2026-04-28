@@ -42,9 +42,8 @@ func (s *TelegramStrategy) Validate(req *Request) error {
 }
 
 func (s *TelegramStrategy) Register(ctx context.Context, req *Request) (*User, error) {
-	// Check if user already exists
+	// Check if user already exists in local DB (cache)
 	if s.dbClient.CheckUserExistsByTelegramID(*req.TelegramID) {
-		// Get existing user
 		dbUser, err := s.dbClient.GetUserByTelegramID(*req.TelegramID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get existing user: %w", err)
@@ -65,32 +64,31 @@ func (s *TelegramStrategy) Register(ctx context.Context, req *Request) (*User, e
 		}
 	}
 
-	// Create new user in local database
-	dbUser, err := s.dbClient.CreateUserFromTelegram(*req.TelegramID, req.Username, req.FirstName, req.LastName)
+	// NEW FLOW: Keycloak is the PRIMARY SOURCE OF TRUTH
+	// Step 1: Create user in Keycloak FIRST (mandatory - fail if error)
+	if s.keycloakAdmin == nil {
+		return nil, fmt.Errorf("keycloak admin service is required but not initialized")
+	}
+
+	kcUser, err := s.keycloakAdmin.CreateUserFromTelegram(*req.TelegramID, req.Username, req.FirstName, req.LastName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create telegram user: %w", err)
+		// Keycloak is mandatory - registration fails if Keycloak fails
+		return nil, fmt.Errorf("failed to create user in Keycloak: %w", err)
+	}
+	if kcUser == nil || kcUser.ID == "" {
+		return nil, fmt.Errorf("keycloak returned empty user or ID")
 	}
 
-	log.Printf("[registration] Created Telegram user in DB: id=%d, telegram_id=%v", dbUser.ID, dbUser.TelegramID)
+	log.Printf("[registration] Created/found Keycloak user: keycloak_sub=%s, telegram_id=%d", kcUser.ID, *req.TelegramID)
 
-	// Also create user in Keycloak (for Android app authentication)
-	if s.keycloakAdmin != nil && s.keycloakAdmin.IsEnabled() {
-		kcUser, err := s.keycloakAdmin.CreateUserFromTelegram(*req.TelegramID, req.Username, req.FirstName, req.LastName)
-		if err != nil {
-			// Log error but don't fail registration - user can still use Telegram
-			log.Printf("[registration] Warning: failed to create Keycloak user: %v", err)
-		} else if kcUser != nil {
-			log.Printf("[registration] Created Keycloak user: id=%s, telegram_id=%d", kcUser.ID, *req.TelegramID)
-
-			// Update local user with keycloak_sub if we got it
-			if kcUser.ID != "" {
-				updateErr := s.dbClient.UpdateUserKeycloakSub(dbUser.ID, kcUser.ID)
-				if updateErr != nil {
-					log.Printf("[registration] Warning: failed to update keycloak_sub: %v", updateErr)
-				}
-			}
-		}
+	// Step 2: Create user in local DB with keycloak_sub
+	dbUser, err := s.dbClient.CreateUserFromTelegram(*req.TelegramID, req.Username, req.FirstName, req.LastName, kcUser.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create user in local DB: %w", err)
 	}
+
+	log.Printf("[registration] Created Telegram user in DB: id=%d, keycloak_sub=%s, telegram_id=%v",
+		dbUser.ID, kcUser.ID, dbUser.TelegramID)
 
 	return &User{
 		ID:                dbUser.ID,

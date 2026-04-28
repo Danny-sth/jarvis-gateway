@@ -117,10 +117,10 @@ type KeycloakCredential struct {
 }
 
 // CreateUserFromTelegram creates a user in Keycloak from Telegram registration
+// IMPORTANT: Keycloak is the primary source of truth - this MUST succeed for registration to work
 func (s *AdminService) CreateUserFromTelegram(telegramID int64, username, firstName, lastName string) (*KeycloakUser, error) {
-	if !s.IsEnabled() {
-		log.Printf("[keycloak-admin] Admin service not enabled, skipping Keycloak user creation")
-		return nil, nil
+	if !s.IsConfigured() {
+		return nil, fmt.Errorf("keycloak admin service is not configured - cannot create user")
 	}
 
 	token, err := s.getAdminToken()
