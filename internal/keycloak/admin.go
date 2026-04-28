@@ -34,8 +34,9 @@ func NewAdminService(cfg *config.Config) *AdminService {
 	}
 }
 
-// IsEnabled returns true if Keycloak admin is configured
-func (s *AdminService) IsEnabled() bool {
+// IsConfigured returns true if Keycloak admin is properly configured
+// Keycloak is REQUIRED - this is used for validation at startup
+func (s *AdminService) IsConfigured() bool {
 	return s.cfg.Keycloak.Enabled &&
 		s.cfg.Keycloak.AdminClientID != "" &&
 		s.cfg.Keycloak.AdminClientSecret != ""

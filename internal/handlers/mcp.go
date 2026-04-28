@@ -64,8 +64,9 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 		var telegramID int64
 		fmt.Sscanf(userID, "%d", &telegramID)
 
-		// Get db_user_id for memory operations
+		// Get db_user_id and keycloak_sub for memory/history operations
 		var dbUserID int64
+		var keycloakSub string
 		if deps.DBClient != nil {
 			user, err := deps.DBClient.GetUserByTelegramID(telegramID)
 			if err != nil {
@@ -73,6 +74,9 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 			}
 			if user != nil {
 				dbUserID = user.ID
+				if user.KeycloakSub != nil {
+					keycloakSub = user.KeycloakSub.String()
+				}
 			}
 		}
 
@@ -101,7 +105,8 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 				"source":      "mcp",
 				"chat_id":     telegramID,  // For fallback to Telegram
 				"db_user_id":  dbUserID,    // For memory operations
-				"user_email":  userEmail,   // For email channel
+				"keycloak_sub": keycloakSub,  // For conversation history
+				"user_email":   userEmail,    // For email channel
 			},
 		}
 
