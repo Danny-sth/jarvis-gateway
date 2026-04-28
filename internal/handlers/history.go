@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"sort"
 	"time"
 
 	"duq-gateway/internal/config"
@@ -31,7 +30,7 @@ type ConversationResponse struct {
 
 // MessageResponse - matches Android app expectations
 type MessageResponse struct {
-	ID              int64     `json:"id"`
+	ID              string    `json:"id"`
 	ConversationID  string    `json:"conversation_id"`
 	Role            string    `json:"role"`
 	Content         string    `json:"content"`
@@ -41,151 +40,136 @@ type MessageResponse struct {
 	CreatedAt       int64     `json:"created_at"`
 }
 
-// GetConversations returns list of sessions (dates) as conversations
+// GetConversations returns list of conversations from PostgreSQL
 // GET /api/conversations
 func GetConversations(deps *HistoryDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Get user from context (set by KeycloakAuth middleware)
-		// Use keycloak_sub as primary identifier (matches duq-core)
-		userID, ok := r.Context().Value("keycloak_sub").(string)
-		if !ok || userID == "" {
+		keycloakSub, ok := r.Context().Value("keycloak_sub").(string)
+		if !ok || keycloakSub == "" {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 			return
 		}
 
 		// Get telegram_id for response (optional)
 		telegramID, _ := r.Context().Value("telegram_id").(int64)
-		log.Printf("[history] Getting conversations for user %s", userID)
+		log.Printf("[history] Getting conversations for keycloak_sub=%s", keycloakSub)
 
-		ctx := r.Context()
-
-		// Get sessions from Redis
-		sessions, err := deps.QueueClient.GetHistorySessions(ctx, userID)
+		// Get conversations from PostgreSQL
+		conversations, err := deps.DBClient.GetConversationsByKeycloakSub(keycloakSub)
 		if err != nil {
-			log.Printf("[history] Error getting sessions: %v", err)
+			log.Printf("[history] Error getting conversations: %v", err)
 			http.Error(w, `{"error":"failed to get conversations"}`, http.StatusInternalServerError)
 			return
 		}
 
-		// Sort sessions (dates) descending (newest first)
-		sort.Sort(sort.Reverse(sort.StringSlice(sessions)))
-
-		// Today's date for active check
-		today := time.Now().UTC().Format("2006-01-02")
-
-		// Convert to ConversationResponse
-		var conversations []ConversationResponse
-		for _, sessionID := range sessions {
-			// Parse session date
-			sessionDate, err := time.Parse("2006-01-02", sessionID)
-			if err != nil {
-				log.Printf("[history] Invalid session date: %s", sessionID)
-				continue
+		// Convert to response format
+		var response []ConversationResponse
+		for _, conv := range conversations {
+			title := formatDateTitle(conv.StartedAt)
+			if conv.Title != nil && *conv.Title != "" {
+				title = *conv.Title
 			}
 
-			// Get messages to determine last message time
-			messages, _ := deps.QueueClient.GetHistoryMessages(ctx, userID, sessionID)
-			var lastMessageAt int64
-			if len(messages) > 0 {
-				// Parse last message timestamp
-				lastMsg := messages[len(messages)-1]
-				if ts, err := time.Parse(time.RFC3339, lastMsg.Timestamp); err == nil {
-					lastMessageAt = ts.Unix()
-				}
-			}
-			if lastMessageAt == 0 {
-				lastMessageAt = sessionDate.Unix()
-			}
-
-			conv := ConversationResponse{
-				ID:            sessionID,
+			resp := ConversationResponse{
+				ID:            conv.ID.String(),
 				UserID:        telegramID,
-				Title:         formatDateTitle(sessionDate),
-				StartedAt:     sessionDate.Unix(),
-				LastMessageAt: lastMessageAt,
-				IsActive:      sessionID == today,
+				Title:         title,
+				StartedAt:     conv.StartedAt.Unix(),
+				LastMessageAt: conv.LastMessageAt.Unix(),
+				IsActive:      conv.IsActive,
 			}
-			conversations = append(conversations, conv)
+			response = append(response, resp)
 		}
 
-		// If no conversations exist, return empty array
-		if conversations == nil {
-			conversations = []ConversationResponse{}
+		// Return empty array if no conversations
+		if response == nil {
+			response = []ConversationResponse{}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(conversations)
-		log.Printf("[history] Returned %d conversations for user %s", len(conversations), userID)
+		json.NewEncoder(w).Encode(response)
+		log.Printf("[history] Returned %d conversations for keycloak_sub=%s", len(response), keycloakSub)
 	}
 }
 
-// GetMessages returns messages for a session
-// GET /api/conversations/{session_id}/messages
+// GetMessages returns messages for a conversation from PostgreSQL
+// GET /api/conversations/{conversation_id}/messages
 func GetMessages(deps *HistoryDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Get user from context - use keycloak_sub (matches duq-core)
-		userID, ok := r.Context().Value("keycloak_sub").(string)
-		if !ok || userID == "" {
+		// Get user from context
+		keycloakSub, ok := r.Context().Value("keycloak_sub").(string)
+		if !ok || keycloakSub == "" {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 			return
 		}
 
-		sessionID := r.PathValue("session_id")
-		if sessionID == "" {
-			http.Error(w, `{"error":"session_id required"}`, http.StatusBadRequest)
+		conversationID := r.PathValue("conversation_id")
+		if conversationID == "" {
+			// Try legacy parameter name
+			conversationID = r.PathValue("session_id")
+		}
+		if conversationID == "" {
+			http.Error(w, `{"error":"conversation_id required"}`, http.StatusBadRequest)
 			return
 		}
-		log.Printf("[history] Getting messages for user %s, session %s", userID, sessionID)
+		log.Printf("[history] Getting messages for conversation=%s, keycloak_sub=%s", conversationID, keycloakSub)
 
-		ctx := r.Context()
+		// Verify conversation belongs to user
+		conv, err := deps.DBClient.GetConversationByID(conversationID)
+		if err != nil {
+			log.Printf("[history] Error getting conversation: %v", err)
+			http.Error(w, `{"error":"failed to get conversation"}`, http.StatusInternalServerError)
+			return
+		}
+		if conv == nil || conv.KeycloakSub.String() != keycloakSub {
+			http.Error(w, `{"error":"conversation not found"}`, http.StatusNotFound)
+			return
+		}
 
-		// Get messages from Redis
-		historyMessages, err := deps.QueueClient.GetHistoryMessages(ctx, userID, sessionID)
+		// Get messages from PostgreSQL
+		messages, err := deps.DBClient.GetMessagesByConversationID(conversationID, 100)
 		if err != nil {
 			log.Printf("[history] Error getting messages: %v", err)
 			http.Error(w, `{"error":"failed to get messages"}`, http.StatusInternalServerError)
 			return
 		}
 
-		// Convert to MessageResponse
-		var messages []MessageResponse
-		for i, msg := range historyMessages {
-			var createdAt int64
-			if ts, err := time.Parse(time.RFC3339, msg.Timestamp); err == nil {
-				createdAt = ts.Unix()
-			}
-
+		// Convert to response format
+		var response []MessageResponse
+		for _, msg := range messages {
 			resp := MessageResponse{
-				ID:              int64(i + 1), // Sequential ID within session
-				ConversationID:  sessionID,
+				ID:              msg.ID.String(),
+				ConversationID:  msg.ConversationID.String(),
 				Role:            msg.Role,
 				Content:         msg.Content,
 				HasAudio:        msg.HasAudio,
 				AudioDurationMs: msg.AudioDurationMs,
 				Waveform:        msg.Waveform,
-				CreatedAt:       createdAt,
+				CreatedAt:       msg.CreatedAt.Unix(),
 			}
-			messages = append(messages, resp)
+			response = append(response, resp)
 		}
 
 		// Return empty array if no messages
-		if messages == nil {
-			messages = []MessageResponse{}
+		if response == nil {
+			response = []MessageResponse{}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(messages)
-		log.Printf("[history] Returned %d messages for session %s", len(messages), sessionID)
+		json.NewEncoder(w).Encode(response)
+		log.Printf("[history] Returned %d messages for conversation=%s", len(response), conversationID)
 	}
 }
 
-// CreateConversation creates a new conversation (session)
+// CreateConversation returns active conversation or placeholder for new one
 // POST /api/conversations
+// Note: Actual conversation creation happens in duq-core when first message is sent
 func CreateConversation(deps *HistoryDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Get user from context - use keycloak_sub
-		userID, ok := r.Context().Value("keycloak_sub").(string)
-		if !ok || userID == "" {
+		// Get user from context
+		keycloakSub, ok := r.Context().Value("keycloak_sub").(string)
+		if !ok || keycloakSub == "" {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 			return
 		}
@@ -193,22 +177,49 @@ func CreateConversation(deps *HistoryDeps) http.HandlerFunc {
 		// Get telegram_id for response (optional)
 		telegramID, _ := r.Context().Value("telegram_id").(int64)
 
-		// New conversation = today's session
-		today := time.Now().UTC()
-		sessionID := today.Format("2006-01-02")
+		// Try to get active conversation from PostgreSQL
+		conv, err := deps.DBClient.GetActiveConversation(keycloakSub)
+		if err != nil {
+			log.Printf("[history] Error getting active conversation: %v", err)
+		}
 
-		conv := ConversationResponse{
-			ID:            sessionID,
-			UserID:        telegramID, // Keep for backwards compat, but userID is keycloak_sub
-			Title:         formatDateTitle(today),
-			StartedAt:     today.Unix(),
-			LastMessageAt: today.Unix(),
+		if conv != nil {
+			// Return existing active conversation
+			title := formatDateTitle(conv.StartedAt)
+			if conv.Title != nil && *conv.Title != "" {
+				title = *conv.Title
+			}
+
+			resp := ConversationResponse{
+				ID:            conv.ID.String(),
+				UserID:        telegramID,
+				Title:         title,
+				StartedAt:     conv.StartedAt.Unix(),
+				LastMessageAt: conv.LastMessageAt.Unix(),
+				IsActive:      true,
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+			log.Printf("[history] Returned existing active conversation %s for keycloak_sub=%s", conv.ID.String(), keycloakSub)
+			return
+		}
+
+		// No active conversation - return placeholder
+		// Actual creation happens in duq-core on first message
+		now := time.Now().UTC()
+		resp := ConversationResponse{
+			ID:            "", // Will be set by duq-core
+			UserID:        telegramID,
+			Title:         formatDateTitle(now),
+			StartedAt:     now.Unix(),
+			LastMessageAt: now.Unix(),
 			IsActive:      true,
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(conv)
-		log.Printf("[history] Created conversation %s for user %s (telegram_id=%d)", sessionID, userID, telegramID)
+		json.NewEncoder(w).Encode(resp)
+		log.Printf("[history] Returned placeholder conversation for keycloak_sub=%s", keycloakSub)
 	}
 }
 
