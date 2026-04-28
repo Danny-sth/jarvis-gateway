@@ -84,7 +84,7 @@ func (c *Client) GetUserPreferencesByTelegramID(telegramID int64) *UserPreferenc
 // User represents a user record
 type User struct {
 	ID                int64
-	TelegramID        int64
+	TelegramID        *int64 // nullable - user may register via email/Keycloak only
 	Username          string
 	FirstName         string
 	LastName          string
@@ -128,6 +128,28 @@ func (c *Client) GetUserByTelegramID(telegramID int64) (*User, error) {
 	return &user, nil
 }
 
+// GetUserByID returns full user info by id
+func (c *Client) GetUserByID(userID int64) (*User, error) {
+	query := `SELECT id, telegram_id, COALESCE(username, ''), COALESCE(first_name, ''),
+	          COALESCE(last_name, ''), role, is_active,
+	          COALESCE(timezone, 'UTC'), COALESCE(preferred_language, 'ru')
+	          FROM users WHERE id = $1`
+
+	var user User
+	err := c.db.QueryRow(query, userID).Scan(
+		&user.ID, &user.TelegramID, &user.Username, &user.FirstName,
+		&user.LastName, &user.Role, &user.IsActive,
+		&user.Timezone, &user.PreferredLanguage,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+	return &user, nil
+}
+
 // CreateUserFromTelegram creates a new user from Telegram registration
 // Returns the created user or error
 func (c *Client) CreateUserFromTelegram(telegramID int64, username, firstName, lastName string) (*User, error) {
@@ -151,7 +173,7 @@ func (c *Client) CreateUserFromTelegram(telegramID int64, username, firstName, l
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	log.Printf("[db] Created/updated user from Telegram: id=%d, telegram_id=%d, username=%s",
+	log.Printf("[db] Created/updated user from Telegram: id=%d, telegram_id=%v, username=%s",
 		user.ID, user.TelegramID, user.Username)
 	return &user, nil
 }
