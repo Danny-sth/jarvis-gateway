@@ -4,81 +4,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"strings"
-	"time"
 
 	"duq-gateway/internal/config"
-	"duq-gateway/internal/credentials"
+	"duq-gateway/internal/oauth"
 	"duq-gateway/internal/queue"
 )
 
-// refreshGoogleTokenIfNeeded checks if token is expired and refreshes it
-func refreshGoogleTokenIfNeeded(cfg *config.Config, credService CredentialServiceInterface, creds *credentials.UserCredentials) error {
-	if creds == nil || !creds.IsExpired() {
-		return nil
-	}
-
-	if creds.RefreshToken == "" {
-		return fmt.Errorf("no refresh token available")
-	}
-
-	log.Printf("[telegram] Token expired for user %d, refreshing...", creds.UserID)
-
-	data := url.Values{
-		"client_id":     {cfg.GoogleOAuth.ClientID},
-		"client_secret": {cfg.GoogleOAuth.ClientSecret},
-		"refresh_token": {creds.RefreshToken},
-		"grant_type":    {"refresh_token"},
-	}
-
-	resp, err := http.Post(
-		"https://oauth2.googleapis.com/token",
-		"application/x-www-form-urlencoded",
-		strings.NewReader(data.Encode()),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to refresh token: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("refresh failed: %s", string(body))
-	}
-
-	var tokenResp struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-		TokenType   string `json:"token_type"`
-	}
-
-	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return fmt.Errorf("failed to parse token response: %w", err)
-	}
-
-	// Update credentials
-	creds.AccessToken = tokenResp.AccessToken
-	creds.TokenType = tokenResp.TokenType
-	if tokenResp.ExpiresIn > 0 {
-		creds.ExpiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
-	}
-
-	// Save updated credentials
-	if err := credService.SaveCredentials(creds); err != nil {
-		return fmt.Errorf("failed to save refreshed credentials: %w", err)
-	}
-
-	log.Printf("[telegram] Token refreshed successfully for user %d", creds.UserID)
-	return nil
-}
 
 // TelegramWithDeps creates a handler with full dependencies
 func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
@@ -194,15 +128,29 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 		// Gateway is pass-through — no session management here.
 		// Duq loads history from DB and saves messages automatically.
 
-		// Get user preferences from database
+		// Get user from database (for db_user_id and preferences)
+		var dbUserID int64
 		if deps.DBClient != nil {
-			prefs := deps.DBClient.GetUserPreferencesByTelegramID(telegramID)
-			opts.UserPreferences = &UserPreferences{
-				Timezone:          prefs.Timezone,
-				PreferredLanguage: prefs.PreferredLanguage,
+			user, err := deps.DBClient.GetUserByTelegramID(telegramID)
+			if err != nil {
+				log.Printf("[telegram] Error getting user: %v", err)
+			} else if user != nil {
+				dbUserID = user.ID
+				opts.UserPreferences = &UserPreferences{
+					Timezone:          user.Timezone,
+					PreferredLanguage: user.PreferredLanguage,
+				}
+				log.Printf("[telegram] User %d (db_id=%d) preferences: tz=%s, lang=%s",
+					telegramID, dbUserID, user.Timezone, user.PreferredLanguage)
+			} else {
+				// User not found - use defaults
+				prefs := deps.DBClient.GetUserPreferencesByTelegramID(telegramID)
+				opts.UserPreferences = &UserPreferences{
+					Timezone:          prefs.Timezone,
+					PreferredLanguage: prefs.PreferredLanguage,
+				}
+				log.Printf("[telegram] User %d not found in DB, using defaults", telegramID)
 			}
-			log.Printf("[telegram] User %d preferences: tz=%s, lang=%s",
-				telegramID, prefs.Timezone, prefs.PreferredLanguage)
 		}
 
 		// Get GWS credentials if available
@@ -213,7 +161,11 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 				log.Printf("[telegram] Error fetching GWS credentials: %v", err)
 			} else if creds != nil {
 				// Auto-refresh if token expired
-				if err := refreshGoogleTokenIfNeeded(deps.Config, deps.CredService, creds); err != nil {
+				oauthCfg := oauth.GoogleOAuthConfig{
+					ClientID:     deps.Config.GoogleOAuth.ClientID,
+					ClientSecret: deps.Config.GoogleOAuth.ClientSecret,
+				}
+				if err := oauth.RefreshGoogleTokenIfNeeded(oauthCfg, deps.CredService, creds); err != nil {
 					log.Printf("[telegram] Failed to refresh token: %v", err)
 				}
 				opts.GWSCredentials = map[string]string{
@@ -227,7 +179,12 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 		}
 
 		// Push directly to Redis queue - Duq worker will pick it up
-		callbackURL := fmt.Sprintf("http://%s/api/duq/callback", deps.Config.GatewayHost)
+		// Use HTTPS if TLS is enabled
+		scheme := "http"
+		if deps.Config.TLS.Enabled {
+			scheme = "https"
+		}
+		callbackURL := fmt.Sprintf("%s://%s/api/duq/callback", scheme, deps.Config.GatewayHost)
 
 		inputType := "text"
 		if isVoice {
@@ -261,18 +218,26 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 			payload["voice_format"] = "ogg" // Telegram voice messages are OGG
 		}
 
+		// Build request metadata
+		requestMetadata := map[string]interface{}{
+			"chat_id":    msg.Chat.ID,
+			"user_email": userEmail,
+			"is_voice":   isVoice,
+			"input_type": inputType,
+			"source":     "telegram",
+		}
+		// Include db_user_id for memory operations (critical for Hindsight)
+		if dbUserID > 0 {
+			requestMetadata["db_user_id"] = dbUserID
+		}
+
 		task := &queue.Task{
-			UserID:      userID,
-			Type:        "message",
-			Priority:    50,
-			CallbackURL: callbackURL,
-			Payload:     payload,
-			RequestMetadata: map[string]interface{}{
-				"chat_id":    msg.Chat.ID,
-				"user_email": userEmail,
-				"is_voice":   isVoice,
-				"input_type": inputType,
-			},
+			UserID:          userID,
+			Type:            "message",
+			Priority:        50,
+			CallbackURL:     callbackURL,
+			Payload:         payload,
+			RequestMetadata: requestMetadata,
 		}
 
 		_, err := deps.QueueClient.Push(r.Context(), task)

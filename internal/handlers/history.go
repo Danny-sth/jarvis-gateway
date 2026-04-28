@@ -156,14 +156,14 @@ func GetMessages(deps *HistoryDeps) http.HandlerFunc {
 			}
 
 			resp := MessageResponse{
-				ID:             int64(i + 1), // Sequential ID within session
-				ConversationID: sessionID,
-				Role:           msg.Role,
-				Content:        msg.Content,
-				HasAudio:       false,
-				AudioDurationMs: nil,
-				Waveform:       nil,
-				CreatedAt:      createdAt,
+				ID:              int64(i + 1), // Sequential ID within session
+				ConversationID:  sessionID,
+				Role:            msg.Role,
+				Content:         msg.Content,
+				HasAudio:        msg.HasAudio,
+				AudioDurationMs: msg.AudioDurationMs,
+				Waveform:        msg.Waveform,
+				CreatedAt:       createdAt,
 			}
 			messages = append(messages, resp)
 		}

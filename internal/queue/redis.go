@@ -206,9 +206,12 @@ func (c *Client) Close() error {
 
 // HistoryMessage represents a single message in conversation history
 type HistoryMessage struct {
-	Role      string `json:"role"`
-	Content   string `json:"content"`
-	Timestamp string `json:"timestamp"`
+	Role           string    `json:"role"`
+	Content        string    `json:"content"`
+	Timestamp      string    `json:"timestamp"`
+	HasAudio       bool      `json:"has_audio,omitempty"`
+	AudioDurationMs *int     `json:"audio_duration_ms,omitempty"`
+	Waveform       []float64 `json:"waveform,omitempty"`
 }
 
 // GetHistorySessions returns all session IDs (dates) with history for a user

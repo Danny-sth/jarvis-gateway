@@ -1,15 +1,23 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"duq-gateway/internal/channels"
 	"duq-gateway/internal/config"
+	"duq-gateway/internal/oauth"
+)
+
+const (
+	// CallbackDeliveryTimeout is the max time to deliver response to channel
+	CallbackDeliveryTimeout = 30 * time.Second
 )
 
 // CallbackPayload from Duq worker (defines locally, no import from duq package)
@@ -124,7 +132,11 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 			creds, err := deps.CredService.GetCredentials(chatID, "google")
 			if err == nil && creds != nil {
 				// Автообновление токена если истёк
-				if err := refreshGoogleTokenIfNeeded(deps.Config, deps.CredService, creds); err != nil {
+				oauthCfg := oauth.GoogleOAuthConfig{
+					ClientID:     deps.Config.GoogleOAuth.ClientID,
+					ClientSecret: deps.Config.GoogleOAuth.ClientSecret,
+				}
+				if err := oauth.RefreshGoogleTokenIfNeeded(oauthCfg, deps.CredService, creds); err != nil {
 					log.Printf("[callback] Failed to refresh token: %v", err)
 				}
 				googleAccessToken = creds.AccessToken
@@ -149,9 +161,13 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 			}
 		}
 
-		// Route response via channel router
+		// Route response via channel router with timeout
+		// Use goroutine with context to prevent hanging on slow channels
 		go func() {
-			ctx := &channels.ResponseContext{
+			ctx, cancel := context.WithTimeout(context.Background(), CallbackDeliveryTimeout)
+			defer cancel()
+
+			respCtx := &channels.ResponseContext{
 				ChatID:            chatID,
 				UserID:            payload.UserID, // For WebSocket routing
 				UserEmail:         userEmail,
@@ -164,15 +180,26 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 				GoogleAccessToken: googleAccessToken,
 			}
 
-			if deps.ChannelRouter != nil {
-				if err := deps.ChannelRouter.Route(outputChannel, ctx); err != nil {
-					log.Printf("[callback] Channel routing failed: %v", err)
+			// Channel for delivery result
+			done := make(chan error, 1)
+
+			go func() {
+				if deps.ChannelRouter != nil {
+					done <- deps.ChannelRouter.Route(outputChannel, respCtx)
+				} else {
+					// Fallback: send to Telegram directly
+					done <- SendTelegramMessage(deps.Config, chatID, response)
 				}
-			} else {
-				// Fallback: send to Telegram directly
-				if err := SendTelegramMessage(deps.Config, chatID, response); err != nil {
-					log.Printf("[callback] Failed to send Telegram message: %v", err)
+			}()
+
+			// Wait for delivery or timeout
+			select {
+			case err := <-done:
+				if err != nil {
+					log.Printf("[callback] Channel routing failed for task %s: %v", payload.TaskID, err)
 				}
+			case <-ctx.Done():
+				log.Printf("[callback] Channel delivery timeout for task %s (channel=%s)", payload.TaskID, outputChannel)
 			}
 		}()
 
