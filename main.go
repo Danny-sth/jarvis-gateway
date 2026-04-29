@@ -387,8 +387,12 @@ func main() {
 	// CSRF protection (disabled for webhooks and Bearer token APIs)
 	csrfConfig := middleware.DefaultCSRFConfig()
 	csrfConfig.CookieSecure = cfg.TLS.Enabled // Secure cookies only with HTTPS
-	// Exclude admin login from CSRF (unauthenticated, Keycloak handles security)
-	csrfConfig.ExcludePaths = append(csrfConfig.ExcludePaths, "/admin/login", "/admin/logout")
+	// Exclude admin login and public APIs from CSRF
+	csrfConfig.ExcludePaths = append(csrfConfig.ExcludePaths,
+		"/admin/login", "/admin/logout",
+		"/api/auth/register",    // Public registration API
+		"/api/auth/verify-email", // Email verification
+	)
 	csrfStore := middleware.NewCSRFStore(24 * time.Hour)
 
 	// Apply middlewares in order: Security Headers → CSRF → Logger

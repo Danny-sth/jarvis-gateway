@@ -1,12 +1,15 @@
 package registration
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
-	"os/exec"
+	"net/http"
 	"time"
 
 	"duq-gateway/internal/config"
@@ -31,7 +34,7 @@ func NewService(cfg *config.Config, dbClient *db.Client, keycloakAdmin *keycloak
 		cfg:              cfg,
 		dbClient:         dbClient,
 		telegramStrategy: NewTelegramStrategy(dbClient, keycloakAdmin),
-		emailStrategy:    NewEmailStrategy(cfg, dbClient),
+		emailStrategy:    NewEmailStrategy(cfg, dbClient, keycloakAdmin),
 		keycloakStrategy: NewKeycloakStrategy(cfg, dbClient),
 	}
 }
@@ -148,7 +151,7 @@ func generateVerificationToken() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-// sendVerificationEmail sends email with verification link
+// sendVerificationEmail sends email with verification link via duq-core API
 func (s *Service) sendVerificationEmail(email, token string) error {
 	verifyURL := fmt.Sprintf("https://%s/api/auth/verify-email?token=%s", s.cfg.TLS.Domain, token)
 
@@ -166,20 +169,56 @@ If you didn't create an account, please ignore this email.
 Best regards,
 Duq AI Assistant`, verifyURL)
 
-	// Use gws CLI to send email
-	cmd := exec.Command("gws", "gmail", "send",
-		"--to", email,
-		"--subject", subject,
-		"--body", body,
-	)
+	// Send via duq-core API
+	return s.sendEmailViaDuqCore(email, subject, body)
+}
 
-	output, err := cmd.CombinedOutput()
+// sendEmailViaDuqCore sends email via duq-core /api/system/send-email endpoint
+func (s *Service) sendEmailViaDuqCore(to, subject, body string) error {
+	// Build request
+	reqBody := map[string]string{
+		"to":      to,
+		"subject": subject,
+		"body":    body,
+	}
+	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
-		log.Printf("[registration] Failed to send verification email: %v, output: %s", err, string(output))
-		return fmt.Errorf("failed to send verification email: %w", err)
+		return fmt.Errorf("failed to marshal email request: %w", err)
 	}
 
-	log.Printf("[registration] Verification email sent to %s", email)
+	// Make request to duq-core
+	duqURL := s.cfg.DuqURL
+	if duqURL == "" {
+		duqURL = "http://localhost:8081"
+	}
+	url := fmt.Sprintf("%s/api/system/send-email", duqURL)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// Add internal key if configured
+	if s.cfg.InternalAPIKey != "" {
+		req.Header.Set("X-Internal-Key", s.cfg.InternalAPIKey)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[registration] Failed to call duq-core send-email: %v", err)
+		return fmt.Errorf("failed to send email via duq-core: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.Printf("[registration] duq-core send-email failed: status=%d, body=%s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("duq-core send-email failed: %s", resp.Status)
+	}
+
+	log.Printf("[registration] Verification email sent to %s via duq-core", to)
 	return nil
 }
 

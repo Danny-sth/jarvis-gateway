@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -56,7 +57,9 @@ func DefaultCSRFConfig() CSRFConfig {
 		ExcludePaths: []string{
 			"/health",
 			"/api/telegram/webhook",
-			"/api/telegram/send", // Internal API for sending alerts
+			"/api/telegram/send",    // Internal API for sending alerts
+			"/api/auth/register",    // Public registration API
+			"/api/auth/verify-email", // Email verification
 			"/api/github",
 			"/api/calendar",
 			"/api/gmail",
@@ -165,6 +168,10 @@ func (s *CSRFStore) cleanup() {
 // are not automatically sent by browsers. This middleware is primarily for
 // form-based submissions and cookie-authenticated endpoints.
 func CSRF(cfg CSRFConfig, store *CSRFStore) func(http.Handler) http.Handler {
+	// Log excluded paths at startup for debugging
+	log.Printf("[csrf] Excluded paths: %v", cfg.ExcludePaths)
+	log.Printf("[csrf] Excluded prefixes: %v", cfg.ExcludePrefixes)
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path

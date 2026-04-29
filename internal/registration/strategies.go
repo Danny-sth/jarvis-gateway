@@ -111,13 +111,14 @@ func (s *TelegramStrategy) GetActivationPolicy() ActivationPolicy {
 
 // EmailStrategy handles email-based registration
 type EmailStrategy struct {
-	cfg      *config.Config
-	dbClient *db.Client
+	cfg           *config.Config
+	dbClient      *db.Client
+	keycloakAdmin *keycloak.AdminService
 }
 
 // NewEmailStrategy creates a new Email strategy
-func NewEmailStrategy(cfg *config.Config, dbClient *db.Client) *EmailStrategy {
-	return &EmailStrategy{cfg: cfg, dbClient: dbClient}
+func NewEmailStrategy(cfg *config.Config, dbClient *db.Client, keycloakAdmin *keycloak.AdminService) *EmailStrategy {
+	return &EmailStrategy{cfg: cfg, dbClient: dbClient, keycloakAdmin: keycloakAdmin}
 }
 
 func (s *EmailStrategy) Validate(req *Request) error {
@@ -128,7 +129,7 @@ func (s *EmailStrategy) Register(ctx context.Context, req *Request) (*User, erro
 	// Normalize email
 	email := NormalizeEmail(req.Email)
 
-	// Check if email already exists
+	// Check if email already exists in local DB
 	exists, err := s.dbClient.CheckUserExistsByEmail(email)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check email existence: %w", err)
@@ -137,22 +138,40 @@ func (s *EmailStrategy) Register(ctx context.Context, req *Request) (*User, erro
 		return nil, &ConflictError{Field: "email", Message: "email already registered"}
 	}
 
-	// Hash password
+	// NEW FLOW: Keycloak is the PRIMARY SOURCE OF TRUTH
+	// Step 1: Create user in Keycloak FIRST (mandatory - fail if error)
+	if s.keycloakAdmin == nil {
+		return nil, fmt.Errorf("keycloak admin service is required but not initialized")
+	}
+
+	kcUser, err := s.keycloakAdmin.CreateUserWithEmail(email, req.Password, req.FirstName, req.LastName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create user in Keycloak: %w", err)
+	}
+	if kcUser == nil || kcUser.ID == "" {
+		return nil, fmt.Errorf("keycloak returned empty user or ID")
+	}
+
+	log.Printf("[registration] Created/found Keycloak user: keycloak_sub=%s, email=%s", kcUser.ID, email)
+
+	// Hash password for local DB (Keycloak has the real password)
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	// Create user with is_active=false
-	dbUser, err := s.dbClient.CreateUserWithEmail(email, string(hashedPassword), req.TelegramID, req.FirstName, req.LastName)
+	// Step 2: Create user in local DB with keycloak_sub
+	dbUser, err := s.dbClient.CreateUserWithEmail(email, string(hashedPassword), req.TelegramID, req.FirstName, req.LastName, kcUser.ID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create email user: %w", err)
+		return nil, fmt.Errorf("failed to create email user in DB: %w", err)
 	}
 
-	log.Printf("[registration] Created email user: id=%d, email=%s (requires verification)", dbUser.ID, dbUser.Email)
+	log.Printf("[registration] Created email user in DB: id=%d, keycloak_sub=%s, email=%s (requires verification)",
+		dbUser.ID, dbUser.KeycloakSub, dbUser.Email)
 
 	return &User{
 		ID:                dbUser.ID,
+		KeycloakSub:       dbUser.KeycloakSub,
 		Email:             dbUser.Email,
 		TelegramID:        dbUser.TelegramID,
 		FirstName:         dbUser.FirstName,

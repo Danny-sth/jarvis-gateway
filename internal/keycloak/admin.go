@@ -301,3 +301,125 @@ func (s *AdminService) UpdateUser(user *KeycloakUser) error {
 
 	return nil
 }
+
+// CreateUserWithEmail creates a user in Keycloak from email registration
+// IMPORTANT: Keycloak is the primary source of truth - this MUST succeed for registration to work
+func (s *AdminService) CreateUserWithEmail(email, password, firstName, lastName string) (*KeycloakUser, error) {
+	if !s.IsConfigured() {
+		return nil, fmt.Errorf("keycloak admin service is not configured - cannot create user")
+	}
+
+	token, err := s.getAdminToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get admin token: %w", err)
+	}
+
+	// Use email as username (before @)
+	username := strings.Split(email, "@")[0]
+
+	user := &KeycloakUser{
+		Username:      username,
+		Email:         email,
+		FirstName:     firstName,
+		LastName:      lastName,
+		Enabled:       true,
+		EmailVerified: false, // Email users need to verify their email
+		Credentials: []KeycloakCredential{
+			{
+				Type:      "password",
+				Value:     password,
+				Temporary: false,
+			},
+		},
+	}
+
+	// Create user in Keycloak
+	usersURL := fmt.Sprintf("%s/admin/realms/%s/users",
+		s.cfg.KeycloakInternalURL, s.cfg.Keycloak.Realm)
+
+	body, err := json.Marshal(user)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal user: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, usersURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 201 Created
+	if resp.StatusCode == http.StatusCreated {
+		// Get user ID from Location header
+		location := resp.Header.Get("Location")
+		if location != "" {
+			parts := strings.Split(location, "/")
+			if len(parts) > 0 {
+				user.ID = parts[len(parts)-1]
+			}
+		}
+		log.Printf("[keycloak-admin] Created Keycloak user with email: email=%s, id=%s", email, user.ID)
+		return user, nil
+	}
+
+	if resp.StatusCode == http.StatusConflict {
+		// User already exists
+		log.Printf("[keycloak-admin] User already exists in Keycloak: email=%s", email)
+		existingUser, err := s.FindUserByEmail(email)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find existing user: %w", err)
+		}
+		if existingUser != nil {
+			return existingUser, nil
+		}
+		return nil, fmt.Errorf("user with email %s already exists", email)
+	}
+
+	respBody, _ := io.ReadAll(resp.Body)
+	return nil, fmt.Errorf("failed to create user: status=%d, body=%s", resp.StatusCode, string(respBody))
+}
+
+// FindUserByEmail finds a user by email
+func (s *AdminService) FindUserByEmail(email string) (*KeycloakUser, error) {
+	token, err := s.getAdminToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get admin token: %w", err)
+	}
+
+	usersURL := fmt.Sprintf("%s/admin/realms/%s/users?email=%s&exact=true",
+		s.cfg.KeycloakInternalURL, s.cfg.Keycloak.Realm, url.QueryEscape(email))
+
+	req, err := http.NewRequest(http.MethodGet, usersURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find user: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to find user: status=%d", resp.StatusCode)
+	}
+
+	var users []KeycloakUser
+	if err := json.NewDecoder(resp.Body).Decode(&users); err != nil {
+		return nil, fmt.Errorf("failed to decode users: %w", err)
+	}
+
+	if len(users) == 0 {
+		return nil, nil
+	}
+
+	return &users[0], nil
+}

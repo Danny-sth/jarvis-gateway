@@ -190,6 +190,7 @@ func (c *Client) CreateUserFromTelegram(telegramID int64, username, firstName, l
 // UserWithEmail extends User with email field
 type UserWithEmail struct {
 	ID                int64
+	KeycloakSub       string // Keycloak subject ID - PRIMARY source of truth
 	Email             string
 	TelegramID        *int64
 	FirstName         string
@@ -213,14 +214,14 @@ func (c *Client) CheckUserExistsByEmail(email string) (bool, error) {
 
 // GetUserByEmail returns user by email
 func (c *Client) GetUserByEmail(email string) (*UserWithEmail, error) {
-	query := `SELECT id, COALESCE(email, ''), telegram_id, COALESCE(first_name, ''),
+	query := `SELECT id, COALESCE(keycloak_sub, ''), COALESCE(email, ''), telegram_id, COALESCE(first_name, ''),
 	          COALESCE(last_name, ''), role, is_active,
 	          COALESCE(timezone, 'UTC'), COALESCE(preferred_language, 'ru')
 	          FROM users WHERE email = $1`
 
 	var user UserWithEmail
 	err := c.db.QueryRow(query, email).Scan(
-		&user.ID, &user.Email, &user.TelegramID, &user.FirstName,
+		&user.ID, &user.KeycloakSub, &user.Email, &user.TelegramID, &user.FirstName,
 		&user.LastName, &user.Role, &user.IsActive,
 		&user.Timezone, &user.PreferredLanguage,
 	)
@@ -234,16 +235,24 @@ func (c *Client) GetUserByEmail(email string) (*UserWithEmail, error) {
 }
 
 // CreateUserWithEmail creates a new user with email registration
+// keycloakSub is REQUIRED - Keycloak is the primary source of truth
 // is_active=false until email is verified
-func (c *Client) CreateUserWithEmail(email, passwordHash string, telegramID *int64, firstName, lastName string) (*UserWithEmail, error) {
-	query := `INSERT INTO users (email, password_hash, telegram_id, first_name, last_name, role, is_active, timezone, preferred_language, created_at, updated_at)
-	          VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), 'user', false, 'UTC', 'ru', NOW(), NOW())
-	          RETURNING id, email, telegram_id, COALESCE(first_name, ''), COALESCE(last_name, ''),
+func (c *Client) CreateUserWithEmail(email, passwordHash string, telegramID *int64, firstName, lastName, keycloakSub string) (*UserWithEmail, error) {
+	if keycloakSub == "" {
+		return nil, fmt.Errorf("keycloak_sub is required")
+	}
+
+	query := `INSERT INTO users (keycloak_sub, email, password_hash, telegram_id, first_name, last_name, role, is_active, timezone, preferred_language, created_at, updated_at)
+	          VALUES ($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''), 'user', false, 'UTC', 'ru', NOW(), NOW())
+	          ON CONFLICT (email) DO UPDATE SET
+	            keycloak_sub = COALESCE(NULLIF(EXCLUDED.keycloak_sub, ''), users.keycloak_sub),
+	            updated_at = NOW()
+	          RETURNING id, keycloak_sub, email, telegram_id, COALESCE(first_name, ''), COALESCE(last_name, ''),
 	                    role, is_active, timezone, preferred_language`
 
 	var user UserWithEmail
-	err := c.db.QueryRow(query, email, passwordHash, telegramID, firstName, lastName).Scan(
-		&user.ID, &user.Email, &user.TelegramID, &user.FirstName,
+	err := c.db.QueryRow(query, keycloakSub, email, passwordHash, telegramID, firstName, lastName).Scan(
+		&user.ID, &user.KeycloakSub, &user.Email, &user.TelegramID, &user.FirstName,
 		&user.LastName, &user.Role, &user.IsActive,
 		&user.Timezone, &user.PreferredLanguage,
 	)
@@ -251,7 +260,7 @@ func (c *Client) CreateUserWithEmail(email, passwordHash string, telegramID *int
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	log.Printf("[db] Created user with email: id=%d, email=%s", user.ID, user.Email)
+	log.Printf("[db] Created/updated user with email: id=%d, keycloak_sub=%s, email=%s", user.ID, user.KeycloakSub, user.Email)
 	return &user, nil
 }
 
