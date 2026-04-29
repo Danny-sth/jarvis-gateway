@@ -198,7 +198,6 @@ func (s *Service) sendEmailViaDuqCore(to, subject, body string) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	// TODO: Add X-Internal-Key header when configured
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
