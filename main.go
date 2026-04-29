@@ -238,6 +238,7 @@ func main() {
 	mux.HandleFunc("GET /api/conversations", middleware.KeycloakAuth(cfg, dbClient, handlers.GetConversations(historyDeps)))
 	mux.HandleFunc("GET /api/conversations/{session_id}/messages", middleware.KeycloakAuth(cfg, dbClient, handlers.GetMessages(historyDeps)))
 	mux.HandleFunc("POST /api/conversations", middleware.KeycloakAuth(cfg, dbClient, handlers.CreateConversation(historyDeps)))
+	mux.HandleFunc("GET /api/messages/{message_id}/audio", middleware.KeycloakAuth(cfg, dbClient, handlers.GetMessageAudio(historyDeps)))
 	log.Printf("[history] History API endpoints registered")
 
 	// WebSocket endpoint for real-time communication with mobile clients

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -220,6 +221,65 @@ func CreateConversation(deps *HistoryDeps) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 		log.Printf("[history] Returned placeholder conversation for keycloak_sub=%s", keycloakSub)
+	}
+}
+
+// GetMessageAudio proxies audio file requests to duq-core
+// GET /api/messages/{message_id}/audio
+func GetMessageAudio(deps *HistoryDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Get user from context (set by KeycloakAuth middleware)
+		keycloakSub, ok := r.Context().Value("keycloak_sub").(string)
+		if !ok || keycloakSub == "" {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+
+		messageID := r.PathValue("message_id")
+		if messageID == "" {
+			http.Error(w, `{"error":"message_id required"}`, http.StatusBadRequest)
+			return
+		}
+
+		log.Printf("[audio] Fetching audio for message=%s, keycloak_sub=%s", messageID, keycloakSub)
+
+		// Proxy request to duq-core
+		duqURL := deps.Config.DuqURL + "/api/messages/" + messageID + "/audio"
+
+		resp, err := http.Get(duqURL)
+		if err != nil {
+			log.Printf("[audio] Error fetching from duq-core: %v", err)
+			http.Error(w, `{"error":"failed to fetch audio"}`, http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		// Check response status
+		if resp.StatusCode == http.StatusNotFound {
+			http.Error(w, `{"error":"audio not found"}`, http.StatusNotFound)
+			return
+		}
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("[audio] duq-core returned status %d", resp.StatusCode)
+			http.Error(w, `{"error":"failed to fetch audio"}`, resp.StatusCode)
+			return
+		}
+
+		// Copy response headers
+		for key, values := range resp.Header {
+			for _, value := range values {
+				w.Header().Add(key, value)
+			}
+		}
+
+		// Stream response body
+		w.WriteHeader(http.StatusOK)
+		_, err = io.Copy(w, resp.Body)
+		if err != nil {
+			log.Printf("[audio] Error streaming audio: %v", err)
+		}
+
+		log.Printf("[audio] Served audio for message=%s", messageID)
 	}
 }
 
