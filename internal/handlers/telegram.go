@@ -128,14 +128,16 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 		// Gateway is pass-through — no session management here.
 		// Duq loads history from DB and saves messages automatically.
 
-		// Get user from database (for db_user_id and preferences)
+		// Get user from database (for db_user_id, keycloak_sub and preferences)
 		var dbUserID int64
+		var keycloakSub string
 		if deps.DBClient != nil {
 			user, err := deps.DBClient.GetUserByTelegramID(telegramID)
 			if err != nil {
 				log.Printf("[telegram] Error getting user: %v", err)
 			} else if user != nil {
 				dbUserID = user.ID
+				keycloakSub = user.KeycloakSub
 				opts.UserPreferences = &UserPreferences{
 					Timezone:          user.Timezone,
 					PreferredLanguage: user.PreferredLanguage,
@@ -229,6 +231,10 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 		// Include db_user_id for memory operations (critical for Hindsight)
 		if dbUserID > 0 {
 			requestMetadata["db_user_id"] = dbUserID
+		}
+		// Include keycloak_sub for conversation history
+		if keycloakSub != "" {
+			requestMetadata["keycloak_sub"] = keycloakSub
 		}
 
 		task := &queue.Task{
