@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"duq-gateway/internal/config"
 	"duq-gateway/internal/db"
@@ -46,34 +47,59 @@ func ProcessMessage(ctx context.Context, deps *APIDeps, req *MessageRequest) (*A
 		return &APIResponse{Error: "user_id and message required"}, fmt.Errorf("missing fields")
 	}
 
-	// Parse telegram_id
-	var telegramID int64
-	fmt.Sscanf(req.UserID, "%d", &telegramID)
-	if req.ChatID == 0 {
-		req.ChatID = telegramID
-	}
 	if req.Source == "" {
 		req.Source = "api"
 	}
 
 	log.Printf("[api] user=%s source=%s msg=%q", req.UserID, req.Source, truncMsg(req.Message, 50))
 
-	// Get user from DB - user MUST already exist (created via registration flow)
-	// Keycloak is the primary source of truth - users must register first
-	var dbUserID int64
-	user, err := deps.DBClient.GetUserByTelegramID(telegramID)
-	if err != nil {
-		log.Printf("[api] Error getting user: %v", err)
-		return &APIResponse{Error: "failed to lookup user"}, fmt.Errorf("db error: %w", err)
+	// Detect if UserID is UUID (keycloak_sub) or numeric (telegram_id)
+	// UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 chars with dashes)
+	var user *db.User
+	var err error
+	var telegramID int64
+	var keycloakSub string
+
+	if strings.Contains(req.UserID, "-") && len(req.UserID) == 36 {
+		// UserID is keycloak_sub UUID
+		keycloakSub = req.UserID
+		user, err = deps.DBClient.GetUserByKeycloakSub(keycloakSub)
+		if err != nil {
+			log.Printf("[api] Error getting user by keycloak_sub: %v", err)
+			return &APIResponse{Error: "failed to lookup user"}, fmt.Errorf("db error: %w", err)
+		}
+		if user == nil {
+			log.Printf("[api] User not found: keycloak_sub=%s - user must register first", keycloakSub)
+			return &APIResponse{Error: "user not registered"}, fmt.Errorf("user not found, registration required")
+		}
+		// Get telegram_id from user if available
+		if user.TelegramID != nil {
+			telegramID = *user.TelegramID
+		}
+	} else {
+		// UserID is telegram_id (numeric)
+		fmt.Sscanf(req.UserID, "%d", &telegramID)
+		user, err = deps.DBClient.GetUserByTelegramID(telegramID)
+		if err != nil {
+			log.Printf("[api] Error getting user: %v", err)
+			return &APIResponse{Error: "failed to lookup user"}, fmt.Errorf("db error: %w", err)
+		}
+		if user == nil {
+			log.Printf("[api] User not found: telegram_id=%d - user must register first", telegramID)
+			return &APIResponse{Error: "user not registered"}, fmt.Errorf("user not found, registration required")
+		}
+		keycloakSub = user.KeycloakSub
 	}
-	if user == nil {
-		log.Printf("[api] User not found: telegram_id=%d - user must register first", telegramID)
-		return &APIResponse{Error: "user not registered"}, fmt.Errorf("user not found, registration required")
+
+	dbUserID := user.ID
+
+	// Set ChatID for callback if not provided
+	if req.ChatID == 0 && telegramID != 0 {
+		req.ChatID = telegramID
 	}
-	dbUserID = user.ID
 
 	// Ensure user exists in RBAC
-	if deps.RBACService != nil {
+	if deps.RBACService != nil && telegramID != 0 {
 		deps.RBACService.EnsureUser(telegramID, "", "", "")
 	}
 
@@ -143,11 +169,12 @@ func ProcessMessage(ctx context.Context, deps *APIDeps, req *MessageRequest) (*A
 		CallbackURL: callbackURL,
 		Payload:     payload,
 		RequestMetadata: map[string]interface{}{
-			"chat_id":     req.ChatID,
-			"db_user_id":  dbUserID,
-			"user_email":  userEmail,
-			"is_voice":    req.IsVoice,
-			"source":      req.Source,
+			"chat_id":      req.ChatID,
+			"db_user_id":   dbUserID,
+			"keycloak_sub": keycloakSub,
+			"user_email":   userEmail,
+			"is_voice":     req.IsVoice,
+			"source":       req.Source,
 		},
 	}
 

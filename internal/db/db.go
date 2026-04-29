@@ -151,6 +151,28 @@ func (c *Client) GetUserByID(userID int64) (*User, error) {
 	return &user, nil
 }
 
+// GetUserByKeycloakSub returns full user info by keycloak_sub UUID
+func (c *Client) GetUserByKeycloakSub(keycloakSub string) (*User, error) {
+	query := `SELECT id, COALESCE(keycloak_sub, ''), telegram_id, COALESCE(username, ''),
+	          COALESCE(first_name, ''), COALESCE(last_name, ''), role, is_active,
+	          COALESCE(timezone, 'UTC'), COALESCE(preferred_language, 'ru')
+	          FROM users WHERE keycloak_sub = $1`
+
+	var user User
+	err := c.db.QueryRow(query, keycloakSub).Scan(
+		&user.ID, &user.KeycloakSub, &user.TelegramID, &user.Username,
+		&user.FirstName, &user.LastName, &user.Role, &user.IsActive,
+		&user.Timezone, &user.PreferredLanguage,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get user by keycloak_sub: %w", err)
+	}
+	return &user, nil
+}
+
 // CreateUserFromTelegram creates a new user from Telegram registration
 // keycloakSub is REQUIRED - Keycloak is the primary source of truth
 // Returns the created user or error
