@@ -160,7 +160,8 @@ func QRVerify(cfg *config.Config, dbClient *db.Client) http.HandlerFunc {
 // JWT Authentication types and handlers
 
 type LoginRequest struct {
-	Username string `json:"username"`
+	Username string `json:"username,omitempty"`
+	Email    string `json:"email,omitempty"`
 	Password string `json:"password"`
 }
 
@@ -176,7 +177,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// Login handles username/password login and returns JWT token
+// Login handles username/email + password login and returns JWT token
 func Login(cfg *config.Config, dbClient *db.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req LoginRequest
@@ -185,7 +186,13 @@ func Login(cfg *config.Config, dbClient *db.Client) http.HandlerFunc {
 			return
 		}
 
-		// Fetch user from database
+		// Require either username or email
+		if req.Username == "" && req.Email == "" {
+			http.Error(w, "Username or email is required", http.StatusBadRequest)
+			return
+		}
+
+		// Fetch user from database (by username or email)
 		var user struct {
 			ID           int
 			PasswordHash string
@@ -193,8 +200,17 @@ func Login(cfg *config.Config, dbClient *db.Client) http.HandlerFunc {
 			IsActive     bool
 		}
 
-		query := `SELECT id, password_hash, role, is_active FROM users WHERE username = $1`
-		err := dbClient.DB().QueryRow(query, req.Username).Scan(
+		var query string
+		var identifier string
+		if req.Email != "" {
+			query = `SELECT id, password_hash, role, is_active FROM users WHERE email = $1`
+			identifier = req.Email
+		} else {
+			query = `SELECT id, password_hash, role, is_active FROM users WHERE username = $1`
+			identifier = req.Username
+		}
+
+		err := dbClient.DB().QueryRow(query, identifier).Scan(
 			&user.ID, &user.PasswordHash, &user.Role, &user.IsActive,
 		)
 		if err == sql.ErrNoRows {
@@ -235,7 +251,7 @@ func Login(cfg *config.Config, dbClient *db.Client) http.HandlerFunc {
 			return
 		}
 
-		log.Printf("[auth] User logged in: username=%s, user_id=%d, role=%s", req.Username, user.ID, user.Role)
+		log.Printf("[auth] User logged in: identifier=%s, user_id=%d, role=%s", identifier, user.ID, user.Role)
 
 		// Return token
 		resp := LoginResponse{

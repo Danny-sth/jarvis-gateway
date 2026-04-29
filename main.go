@@ -198,6 +198,7 @@ func main() {
 	mux.HandleFunc("POST /api/auth/register", middleware.RateLimitFunc(authLimiter, handlers.Register(registrationDeps)))
 	mux.HandleFunc("GET /api/auth/verify-email", middleware.RateLimitFunc(authLimiter, handlers.VerifyEmail(registrationDeps)))
 	mux.HandleFunc("POST /api/auth/resend-verification", middleware.RateLimitFunc(authLimiter, handlers.ResendVerification(registrationDeps)))
+	mux.HandleFunc("POST /api/auth/login", middleware.RateLimitFunc(authLimiter, handlers.Login(cfg, dbClient)))
 
 	// QR Authentication endpoints (rate limited)
 	mux.HandleFunc("POST /api/auth/qr/generate", middleware.KeycloakAuth(cfg, dbClient, handlers.QRGenerate(cfg, dbClient)))
@@ -391,8 +392,9 @@ func main() {
 	// Exclude admin login and public APIs from CSRF
 	csrfConfig.ExcludePaths = append(csrfConfig.ExcludePaths,
 		"/admin/login", "/admin/logout",
-		"/api/auth/register",    // Public registration API
+		"/api/auth/register",     // Public registration API
 		"/api/auth/verify-email", // Email verification
+		"/api/auth/login",        // Public login API
 	)
 	csrfStore := middleware.NewCSRFStore(24 * time.Hour)
 
