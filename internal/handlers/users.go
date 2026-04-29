@@ -105,70 +105,14 @@ func ListUsers(dbClient *db.Client) http.HandlerFunc {
 }
 
 // POST /api/users
+// DEPRECATED: This endpoint creates users without Keycloak integration.
+// Users should be created via Telegram /start (Keycloak-first flow) or Keycloak Admin API.
 func CreateUser(dbClient *db.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// RBAC: Only admin can create users
-		currentRole := r.Context().Value("role").(string)
-		if !isAdmin(currentRole) {
-			http.Error(w, "Forbidden: admin access required", http.StatusForbidden)
-			return
-		}
-
-		var req CreateUserRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
-			return
-		}
-
-		// Validate
-		if req.Username == "" || len(req.Username) < 3 {
-			http.Error(w, "Username must be at least 3 characters", http.StatusBadRequest)
-			return
-		}
-
-		if req.Password == "" || len(req.Password) < 8 {
-			http.Error(w, "Password must be at least 8 characters", http.StatusBadRequest)
-			return
-		}
-
-		if req.Role == "" {
-			req.Role = "public" // Default role
-		}
-
-		// Hash password
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-		if err != nil {
-			http.Error(w, "Failed to hash password", http.StatusInternalServerError)
-			return
-		}
-
-		// Insert user
-		query := `
-			INSERT INTO users (username, password_hash, role, telegram_id, is_active, created_at)
-			VALUES ($1, $2, $3, $4, $5, NOW())
-			RETURNING id, username, role, telegram_id, is_active, created_at
-		`
-
-		var user User
-		err = dbClient.DB().QueryRow(query, req.Username, string(hashedPassword), req.Role, req.TelegramID, req.IsActive).Scan(
-			&user.ID, &user.Username, &user.Role, &user.TelegramID, &user.IsActive, &user.CreatedAt,
-		)
-
-		if err != nil {
-			if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
-				http.Error(w, "Username already exists", http.StatusConflict)
-				return
-			}
-			log.Printf("[users] Create error: %v", err)
-			http.Error(w, "Database error", http.StatusInternalServerError)
-			return
-		}
-
-		log.Printf("[users] User created: id=%d, username=%s, role=%s", user.ID, user.Username, user.Role)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(user)
+		// This endpoint is deprecated - users must be created through Keycloak
+		// Keycloak is the primary source of truth for user identity
+		log.Printf("[users] DEPRECATED: CreateUser endpoint called - returning error")
+		http.Error(w, "Deprecated: Users must be created via Keycloak. Use Telegram /start or Keycloak Admin API.", http.StatusGone)
 	}
 }
 

@@ -144,34 +144,28 @@ func (s *Service) InvalidateAllCache() {
 	s.cache.clear()
 }
 
-// EnsureUser creates user if not exists, auto-assigns 'user' role to new users
+// EnsureUser updates existing user info (does NOT create new users)
+// New users must register via /start command which creates them in Keycloak first
 func (s *Service) EnsureUser(userID int64, username, firstName, lastName string) error {
-	// Check if user exists
-	var exists bool
-	err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE telegram_id = $1)", userID).Scan(&exists)
-	if err != nil {
-		return err
-	}
-
-	// Insert/update user
+	// Only update existing users - do NOT create new users without Keycloak
+	// Keycloak is the primary source of truth for user identity
 	query := `
-		INSERT INTO users (telegram_id, username, first_name, last_name)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (telegram_id) DO UPDATE SET
-			username = COALESCE(EXCLUDED.username, users.username),
-			first_name = COALESCE(EXCLUDED.first_name, users.first_name),
-			last_name = COALESCE(EXCLUDED.last_name, users.last_name),
+		UPDATE users SET
+			username = COALESCE(NULLIF($2, ''), username),
+			first_name = COALESCE(NULLIF($3, ''), first_name),
+			last_name = COALESCE(NULLIF($4, ''), last_name),
 			updated_at = NOW()
+		WHERE telegram_id = $1
 	`
-	_, err = s.db.Exec(query, userID, nullString(username), nullString(firstName), nullString(lastName))
+	result, err := s.db.Exec(query, userID, nullString(username), nullString(firstName), nullString(lastName))
 	if err != nil {
 		return err
 	}
 
-	// Auto-assign 'user' role to new users
-	if !exists {
-		log.Printf("[rbac] New user %d, assigning 'user' role", userID)
-		return s.AssignRole(userID, "user")
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		// User doesn't exist - they need to register via /start
+		log.Printf("[rbac] User %d not found, must register via /start", userID)
 	}
 
 	return nil
