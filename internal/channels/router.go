@@ -41,6 +41,7 @@ type Router struct {
 	channels       map[string]Channel
 	defaultChannel Channel
 	fallback       Channel
+	androidChannel Channel // For WebSocket broadcast to all connected clients
 }
 
 // NewRouter creates a router with registered channels
@@ -56,6 +57,9 @@ func NewRouter(channels []Channel, defaultName string) *Router {
 		}
 		if ch.Name() == "telegram" {
 			r.fallback = ch
+		}
+		if ch.Name() == "android" {
+			r.androidChannel = ch
 		}
 	}
 
@@ -97,7 +101,21 @@ func (r *Router) Route(channelName string, ctx *ResponseContext) error {
 		return fmt.Errorf("channel '%s' cannot handle context and no fallback available", ch.Name())
 	}
 
-	return ch.Send(ctx)
+	// Send to primary channel
+	err := ch.Send(ctx)
+
+	// Broadcast to WebSocket for real-time sync (if not already sent via android channel)
+	// This ensures all connected Android clients receive updates regardless of source
+	if ch.Name() != "android" && r.androidChannel != nil && r.androidChannel.CanHandle(ctx) {
+		// Fire-and-forget broadcast - don't fail primary delivery if WS fails
+		go func() {
+			if wsErr := r.androidChannel.Send(ctx); wsErr != nil {
+				log.Printf("[router] WebSocket broadcast failed: %v", wsErr)
+			}
+		}()
+	}
+
+	return err
 }
 
 // routeWithFallbackNotice sends error to fallback and then original response
