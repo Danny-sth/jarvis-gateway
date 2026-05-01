@@ -44,6 +44,8 @@ func (c *AndroidChannel) Send(ctx *ResponseContext) error {
 	// Add voice data if present (base64 encoded)
 	if len(ctx.VoiceData) > 0 {
 		msg.VoiceData = base64.StdEncoding.EncodeToString(ctx.VoiceData)
+		msg.Waveform = ctx.Waveform
+		msg.AudioDurationMs = ctx.AudioDurationMs
 	}
 
 	// Get userID from ChatID (for Telegram users, ChatID == UserID)

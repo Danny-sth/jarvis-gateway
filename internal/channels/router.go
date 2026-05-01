@@ -16,10 +16,12 @@ type ResponseContext struct {
 	Source    string // Request source: "telegram", "android", "mcp"
 
 	// Voice-aware fields (from Duq response)
-	OutputType    string // "text", "voice", or "both"
-	VoicePriority string // "high", "normal", or "skip"
-	VoiceData     []byte // Audio bytes (MP3 from Duq)
-	VoiceFormat   string // Audio format (default: "mp3")
+	OutputType      string    // "text", "voice", or "both"
+	VoicePriority   string    // "high", "normal", or "skip"
+	VoiceData       []byte    // Audio bytes (MP3 from Duq)
+	VoiceFormat     string    // Audio format (default: "mp3")
+	Waveform        []float64 // Audio waveform for visualization
+	AudioDurationMs int       // Audio duration in milliseconds
 
 	// OAuth credentials for email channel
 	GoogleAccessToken  string

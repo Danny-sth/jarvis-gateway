@@ -65,6 +65,8 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 		var outputChannel string = "telegram"
 		var voiceData []byte
 		var voiceFormat string
+		var waveform []float64
+		var audioDurationMs int
 
 		if payload.Success && payload.Result != nil {
 			if resp, ok := payload.Result["response"].(string); ok {
@@ -85,6 +87,18 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 			}
 			if vf, ok := payload.Result["voice_format"].(string); ok {
 				voiceFormat = vf
+			}
+			// Extract waveform for audio visualization
+			if wf, ok := payload.Result["waveform"].([]interface{}); ok {
+				for _, v := range wf {
+					if f, ok := v.(float64); ok {
+						waveform = append(waveform, f)
+					}
+				}
+			}
+			// Extract audio duration
+			if dur, ok := payload.Result["audio_duration_ms"].(float64); ok {
+				audioDurationMs = int(dur)
 			}
 		} else if !payload.Success {
 			response = "Error processing request: " + payload.Error
@@ -187,6 +201,8 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 				Source:            source,         // For channel routing
 				VoiceData:         voiceData,
 				VoiceFormat:       voiceFormat,
+				Waveform:          waveform,
+				AudioDurationMs:   audioDurationMs,
 				GoogleAccessToken: googleAccessToken,
 			}
 
