@@ -159,6 +159,9 @@ func ProcessMessage(ctx context.Context, deps *APIDeps, req *MessageRequest) (*A
 		} else {
 			payload["voice_format"] = "wav" // default
 		}
+		// Auto-set IsVoice when voice_data is present
+		// This ensures TTS response is generated for voice input
+		req.IsVoice = true
 	}
 
 	// Build task
