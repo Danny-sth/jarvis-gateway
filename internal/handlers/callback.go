@@ -152,12 +152,16 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 		// Check if this was a voice message and extract source
 		isVoice := false
 		source := "telegram" // Default source
+		keycloakSub := ""    // For WebSocket routing (Android uses keycloak_sub)
 		if payload.RequestMetadata != nil {
 			if v, ok := payload.RequestMetadata["is_voice"].(bool); ok {
 				isVoice = v
 			}
 			if s, ok := payload.RequestMetadata["source"].(string); ok && s != "" {
 				source = s
+			}
+			if ks, ok := payload.RequestMetadata["keycloak_sub"].(string); ok && ks != "" {
+				keycloakSub = ks
 			}
 		}
 
@@ -167,9 +171,15 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 			ctx, cancel := context.WithTimeout(context.Background(), CallbackDeliveryTimeout)
 			defer cancel()
 
+			// For WebSocket routing, prefer keycloak_sub (Android auth) over telegram_id
+			wsUserID := payload.UserID
+			if keycloakSub != "" {
+				wsUserID = keycloakSub
+			}
+
 			respCtx := &channels.ResponseContext{
 				ChatID:            chatID,
-				UserID:            payload.UserID, // For WebSocket routing
+				UserID:            wsUserID, // keycloak_sub for WebSocket, telegram_id for fallback
 				UserEmail:         userEmail,
 				Response:          response,
 				IsVoice:           isVoice,
