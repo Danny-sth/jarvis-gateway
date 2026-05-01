@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -397,8 +398,21 @@ func InitiateOAuthHandler(deps *GoogleOAuthDeps) http.HandlerFunc {
 			return
 		}
 
-		// For Telegram, chatID is same as userID for private messages
-		chatID := userID
+		// userID from Duq is db_user_id - lookup telegram_id for Telegram sending
+		var chatID int64
+		if deps.CredService != nil && deps.CredService.DB() != nil {
+			var telegramID sql.NullInt64
+			err := deps.CredService.DB().QueryRow("SELECT telegram_id FROM users WHERE id = $1", userID).Scan(&telegramID)
+			if err != nil || !telegramID.Valid {
+				log.Printf("[google-oauth] Failed to lookup telegram_id for db_user_id %d: %v", userID, err)
+				http.Error(w, "User not found or no Telegram", http.StatusNotFound)
+				return
+			}
+			chatID = telegramID.Int64
+			log.Printf("[google-oauth] Resolved db_user_id %d -> telegram_id %d", userID, chatID)
+		} else {
+			chatID = userID
+		}
 
 		// Check if already connected
 		if deps.CredService != nil {
