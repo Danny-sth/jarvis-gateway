@@ -133,19 +133,26 @@ func (c *Client) GetActiveConversation(keycloakSub string) (*Conversation, error
 	return &conv, nil
 }
 
-// GetMessagesByConversationID returns all messages for a conversation
+// GetMessagesByConversationID returns the most recent messages for a conversation
+// Returns messages in chronological order (oldest first)
 func (c *Client) GetMessagesByConversationID(conversationID string, limit int) ([]Message, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 
+	// Get last N messages by selecting in DESC order, then reverse to ASC
 	query := `
 		SELECT id, conversation_id, role, content, has_audio,
 		       audio_duration_ms, waveform, source_channel, created_at
-		FROM messages
-		WHERE conversation_id = $1
+		FROM (
+			SELECT id, conversation_id, role, content, has_audio,
+			       audio_duration_ms, waveform, source_channel, created_at
+			FROM messages
+			WHERE conversation_id = $1
+			ORDER BY created_at DESC
+			LIMIT $2
+		) sub
 		ORDER BY created_at ASC
-		LIMIT $2
 	`
 
 	rows, err := c.db.Query(query, conversationID, limit)
