@@ -59,13 +59,9 @@ func Handler(hub *Hub, cfg *config.Config) http.HandlerFunc {
 		// r.Context() gets cancelled when handler returns, so use Background()
 		ctx, cancel := context.WithCancel(context.Background())
 
-		// Use telegram_id if available (from Keycloak user attribute mapper)
-		// Falls back to keycloak sub (UUID) if telegram_id not set
-		userID := claims.TelegramID
-		if userID == "" {
-			userID = claims.Subject
-			log.Printf("[ws] Warning: telegram_id not in JWT, using sub: %s", userID)
-		}
+		// Use keycloak_sub as primary user ID for WebSocket connections
+		// This matches ctx.UserID used in Android channel for message delivery
+		userID := claims.Subject
 
 		connection := &Connection{
 			Conn:      conn,
