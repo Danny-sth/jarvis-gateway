@@ -10,6 +10,7 @@ import (
 
 	"duq-gateway/internal/config"
 	"duq-gateway/internal/oauth"
+	"github.com/google/uuid"
 	"duq-gateway/internal/queue"
 )
 
@@ -224,6 +225,14 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 			"input_type": inputType,
 			"source":     "telegram",
 		}
+		// Generate trace_id for request tracing
+		traceID := r.Header.Get("X-Trace-Id")
+		if traceID == "" {
+			traceID = uuid.New().String()
+		}
+		requestMetadata["trace_id"] = traceID
+		log.Printf("[telegram] Request trace_id: %s", traceID)
+		// Continue with metadata
 		// Include db_user_id for memory operations (critical for Hindsight)
 		if dbUserID > 0 {
 			requestMetadata["db_user_id"] = dbUserID
