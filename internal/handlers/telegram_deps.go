@@ -29,5 +29,6 @@ type RBACServiceInterface interface {
 // CredentialServiceInterface for user credentials operations
 type CredentialServiceInterface interface {
 	GetCredentials(userID int64, provider string) (*credentials.UserCredentials, error)
+	GetCredentialsByTelegramID(telegramID int64, provider string) (*credentials.UserCredentials, error)
 	SaveCredentials(creds *credentials.UserCredentials) error
 }

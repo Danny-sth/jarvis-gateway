@@ -143,7 +143,7 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 
 		// Для email канала получаем OAuth токены из БД
 		if outputChannel == "email" && deps.CredService != nil {
-			creds, err := deps.CredService.GetCredentials(chatID, "google")
+			creds, err := deps.CredService.GetCredentialsByTelegramID(chatID, "google")
 			if err == nil && creds != nil {
 				// Автообновление токена если истёк
 				oauthCfg := oauth.GoogleOAuthConfig{

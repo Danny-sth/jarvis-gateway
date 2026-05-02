@@ -252,6 +252,10 @@ func (m *MockCredService) GetCredentials(userID int64, provider string) (*creden
 	return m.creds, m.getErr
 }
 
+func (m *MockCredService) GetCredentialsByTelegramID(telegramID int64, provider string) (*credentials.UserCredentials, error) {
+	return m.creds, m.getErr
+}
+
 func (m *MockCredService) SaveCredentials(creds *credentials.UserCredentials) error {
 	return m.saveErr
 }

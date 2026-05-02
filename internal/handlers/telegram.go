@@ -158,7 +158,7 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 		// Get GWS credentials if available
 		var userEmail string
 		if deps.CredService != nil {
-			creds, err := deps.CredService.GetCredentials(telegramID, "google")
+			creds, err := deps.CredService.GetCredentialsByTelegramID(telegramID, "google")
 			if err != nil {
 				log.Printf("[telegram] Error fetching GWS credentials: %v", err)
 			} else if creds != nil {

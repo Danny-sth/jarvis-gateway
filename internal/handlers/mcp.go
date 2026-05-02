@@ -81,7 +81,7 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 		// Get user email from credentials (for email channel)
 		var userEmail string
 		if deps.CredService != nil {
-			if creds, err := deps.CredService.GetCredentials(telegramID, "google"); err == nil && creds != nil {
+			if creds, err := deps.CredService.GetCredentialsByTelegramID(telegramID, "google"); err == nil && creds != nil {
 				userEmail = creds.Email
 				log.Printf("[mcp] User %d has email: %s", telegramID, userEmail)
 			}

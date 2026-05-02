@@ -123,7 +123,7 @@ func ProcessMessage(ctx context.Context, deps *APIDeps, req *MessageRequest) (*A
 	var gwsCreds map[string]string
 	var userEmail string
 	if deps.CredService != nil {
-		if creds, err := deps.CredService.GetCredentials(telegramID, "google"); err == nil && creds != nil {
+		if creds, err := deps.CredService.GetCredentialsByTelegramID(telegramID, "google"); err == nil && creds != nil {
 			gwsCreds = map[string]string{
 				"access_token":  creds.AccessToken,
 				"refresh_token": creds.RefreshToken,

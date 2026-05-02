@@ -38,6 +38,23 @@ func (s *Service) DB() *sql.DB {
 	return s.db
 }
 
+// GetCredentialsByTelegramID retrieves credentials using telegram_id
+// First looks up db_user_id from users table, then fetches credentials
+func (s *Service) GetCredentialsByTelegramID(telegramID int64, provider string) (*UserCredentials, error) {
+	// Lookup db_user_id from users table
+	var dbUserID int64
+	err := s.db.QueryRow("SELECT id FROM users WHERE telegram_id = $1", telegramID).Scan(&dbUserID)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to lookup user: %w", err)
+	}
+
+	// Get credentials using db_user_id
+	return s.GetCredentials(dbUserID, provider)
+}
+
 // GetCredentials retrieves credentials for a user and provider
 func (s *Service) GetCredentials(userID int64, provider string) (*UserCredentials, error) {
 	query := `
