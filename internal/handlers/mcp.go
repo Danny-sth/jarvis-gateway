@@ -121,11 +121,11 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 
 		log.Printf("[mcp] Task queued: %s", taskID)
 
-		// Wait for response (2 minute timeout)
-		waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		// Wait for response (5 minute timeout for long ReAct chains)
+		waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
 
-		response, err := deps.QueueClient.WaitForResponse(waitCtx, taskID, 2*time.Minute)
+		response, err := deps.QueueClient.WaitForResponse(waitCtx, taskID, 5*time.Minute)
 		if err != nil {
 			log.Printf("[mcp] Wait failed: %v", err)
 			w.Header().Set("Content-Type", "application/json")
