@@ -95,10 +95,12 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 						waveform = append(waveform, f)
 					}
 				}
+				log.Printf("[callback] Waveform extracted: %d points", len(waveform))
 			}
 			// Extract audio duration
 			if dur, ok := payload.Result["audio_duration_ms"].(float64); ok {
 				audioDurationMs = int(dur)
+				log.Printf("[callback] Audio duration: %dms", audioDurationMs)
 			}
 		} else if !payload.Success {
 			response = "Error processing request: " + payload.Error

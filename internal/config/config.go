@@ -33,7 +33,8 @@ type VoiceConfig struct {
 }
 
 type TelegramConfig struct {
-	BotToken string `json:"bot_token"` // Telegram bot token for downloading files
+	BotToken   string `json:"bot_token"`   // Telegram bot token for downloading files
+	UsePolling bool   `json:"use_polling"` // Use long polling instead of webhook (for hosting issues)
 }
 
 type GoogleOAuthConfig struct {
@@ -238,6 +239,9 @@ func Load() (*Config, error) {
 	// Telegram env overrides
 	if botToken := os.Getenv("TELEGRAM_BOT_TOKEN"); botToken != "" {
 		cfg.Telegram.BotToken = botToken
+	}
+	if usePolling := os.Getenv("TELEGRAM_USE_POLLING"); usePolling == "true" || usePolling == "1" {
+		cfg.Telegram.UsePolling = true
 	}
 
 	// Owner email override

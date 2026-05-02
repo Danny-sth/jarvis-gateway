@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -24,6 +25,7 @@ import (
 	"duq-gateway/internal/queue"
 	"duq-gateway/internal/rbac"
 	"duq-gateway/internal/registration"
+	"duq-gateway/internal/telegram"
 	"duq-gateway/internal/websocket"
 )
 
@@ -424,6 +426,19 @@ func main() {
 			log.Printf("Internal HTTP server error: %v", err)
 		}
 	}()
+
+	// Start Telegram long polling if webhook is not working (hosting issues)
+	if cfg.Telegram.UsePolling && cfg.Telegram.BotToken != "" {
+		// Wait for internal server to be ready
+		time.Sleep(1 * time.Second)
+
+		// Internal webhook URL for forwarding polled messages
+		webhookURL := fmt.Sprintf("http://localhost:%s/api/telegram/webhook", cfg.Port)
+		poller := telegram.NewPoller(cfg, webhookURL)
+		if err := poller.Start(ctx); err != nil {
+			log.Printf("[telegram-poller] Failed to start: %v", err)
+		}
+	}
 
 	// Start server based on TLS configuration
 	if cfg.TLS.Enabled && cfg.TLS.Domain != "" {
