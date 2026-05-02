@@ -181,12 +181,8 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 		}
 
 		// Push directly to Redis queue - Duq worker will pick it up
-		// Use HTTPS if TLS is enabled
-		scheme := "http"
-		if deps.Config.TLS.Enabled {
-			scheme = "https"
-		}
-		callbackURL := fmt.Sprintf("%s://%s/api/duq/callback", scheme, deps.Config.GatewayHost)
+		// Always use HTTP for internal Docker callbacks (TLS is for external traffic only)
+		callbackURL := fmt.Sprintf("http://%s/api/duq/callback", deps.Config.GatewayHost)
 
 		inputType := "text"
 		if isVoice {
