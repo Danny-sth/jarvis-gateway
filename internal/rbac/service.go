@@ -99,10 +99,17 @@ func (s *Service) GetUserPermissions(userID int64) ([]string, error) {
 }
 
 // GetAllowedTools returns list of MCP tool names the user can access
+// Filters out obsidian tools if user hasn't connected their vault
 func (s *Service) GetAllowedTools(userID int64) ([]string, error) {
 	// Check cache first
 	if cached := s.cache.get(userID); cached != nil {
-		return cached.tools, nil
+		tools := cached.tools
+		// Filter obsidian tools based on vault status
+		hasVault, _ := s.HasObsidianVault(userID)
+		if !hasVault {
+			tools = filterOutObsidianTools(tools)
+		}
+		return tools, nil
 	}
 
 	// Get permissions (this will also cache tools)
@@ -113,10 +120,48 @@ func (s *Service) GetAllowedTools(userID int64) ([]string, error) {
 
 	// Now cache should have the tools
 	if cached := s.cache.get(userID); cached != nil {
-		return cached.tools, nil
+		tools := cached.tools
+		// Filter obsidian tools based on vault status
+		hasVault, _ := s.HasObsidianVault(userID)
+		if !hasVault {
+			tools = filterOutObsidianTools(tools)
+		}
+		return tools, nil
 	}
 
 	return nil, nil
+}
+
+// HasObsidianVault checks if user has connected their personal Obsidian vault
+func (s *Service) HasObsidianVault(userID int64) (bool, error) {
+	var hasVault bool
+	err := s.db.QueryRow(
+		"SELECT has_obsidian_vault FROM users WHERE id = $1",
+		userID,
+	).Scan(&hasVault)
+
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return hasVault, nil
+}
+
+// filterOutObsidianTools removes obsidian_* tools from the list
+// Keeps connect_obsidian so users can still connect their vault
+func filterOutObsidianTools(tools []string) []string {
+	filtered := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		// Keep connect_obsidian, filter other obsidian tools
+		if tool == "connect_obsidian" {
+			filtered = append(filtered, tool)
+		} else if len(tool) < 9 || tool[:9] != "obsidian_" {
+			filtered = append(filtered, tool)
+		}
+	}
+	return filtered
 }
 
 // HasPermission checks if user has a specific permission
