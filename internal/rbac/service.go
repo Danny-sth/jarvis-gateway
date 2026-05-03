@@ -229,6 +229,52 @@ func (s *Service) IsUserActive(userID int64) (bool, error) {
 	return isActive, nil
 }
 
+// GetUserIDByTelegramID returns internal users.id from telegram_id
+// This is used to sync with RBAC tables which use users.id, not telegram_id
+func (s *Service) GetUserIDByTelegramID(telegramID int64) (int64, error) {
+	var userID int64
+	err := s.db.QueryRow(
+		"SELECT id FROM users WHERE telegram_id = $1",
+		telegramID,
+	).Scan(&userID)
+
+	if err == sql.ErrNoRows {
+		return 0, fmt.Errorf("user not found: telegram_id=%d", telegramID)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("failed to get user ID: %w", err)
+	}
+	return userID, nil
+}
+
+// EnsureUserRole ensures user has at least the default 'user' role
+// Call this after user registration to grant basic permissions
+func (s *Service) EnsureUserRole(userID int64) error {
+	// Check if user has any roles
+	var count int
+	err := s.db.QueryRow(
+		"SELECT COUNT(*) FROM user_roles WHERE user_id = $1",
+		userID,
+	).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to check user roles: %w", err)
+	}
+
+	if count == 0 {
+		// Assign default 'user' role (id=1)
+		_, err := s.db.Exec(
+			"INSERT INTO user_roles (user_id, role_id) VALUES ($1, 1) ON CONFLICT DO NOTHING",
+			userID,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to assign default role: %w", err)
+		}
+		log.Printf("[rbac] Assigned default 'user' role to user %d", userID)
+		s.InvalidateCache(userID)
+	}
+	return nil
+}
+
 // cache methods
 func (c *cache) get(userID int64) *cacheItem {
 	c.mu.RLock()

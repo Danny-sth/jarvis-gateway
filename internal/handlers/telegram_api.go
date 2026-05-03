@@ -77,6 +77,30 @@ func SendTelegramMessageWithKeyboard(cfg *config.Config, chatID int64, text stri
 	return nil
 }
 
+// SendTypingAction sends "typing" action to show the bot is processing
+func SendTypingAction(cfg *config.Config, chatID int64) error {
+	botToken := cfg.Telegram.BotToken
+	if botToken == "" {
+		return fmt.Errorf("telegram bot token not configured")
+	}
+
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendChatAction", botToken)
+
+	payload := map[string]interface{}{
+		"chat_id": chatID,
+		"action":  "typing",
+	}
+
+	jsonData, _ := json.Marshal(payload)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(jsonData))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	return nil
+}
+
 // AnswerCallbackQuery answers a callback query (removes loading state from button)
 func AnswerCallbackQuery(cfg *config.Config, callbackID string, text string) error {
 	botToken := cfg.Telegram.BotToken
@@ -113,6 +137,7 @@ func getMainMenuKeyboard() *InlineKeyboardMarkup {
 				{Text: "⚙️ Настройки", CallbackData: "menu_settings"},
 			},
 			{
+				{Text: "🛠 Инструменты", CallbackData: "menu_tools"},
 				{Text: "❓ Помощь", CallbackData: "menu_help"},
 			},
 		},

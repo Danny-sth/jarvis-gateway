@@ -110,12 +110,19 @@ func ProcessMessage(ctx context.Context, deps *APIDeps, req *MessageRequest) (*A
 	// User prefs
 	prefs := deps.DBClient.GetUserPreferencesByTelegramID(telegramID)
 
-	// Allowed tools from RBAC
+	// Allowed tools from RBAC using internal user ID
 	var allowedTools []string
 	if deps.RBACService != nil {
-		tools, err := deps.RBACService.GetAllowedTools(telegramID)
+		// Resolve internal users.id from telegram_id
+		internalUserID, err := deps.RBACService.GetUserIDByTelegramID(telegramID)
 		if err == nil {
-			allowedTools = tools
+			// Ensure user has default role
+			deps.RBACService.EnsureUserRole(internalUserID)
+
+			tools, err := deps.RBACService.GetAllowedTools(internalUserID)
+			if err == nil {
+				allowedTools = tools
+			}
 		}
 	}
 

@@ -24,6 +24,8 @@ type TelegramDeps struct {
 type RBACServiceInterface interface {
 	GetAllowedTools(userID int64) ([]string, error)
 	EnsureUser(userID int64, username, firstName, lastName string) error
+	GetUserIDByTelegramID(telegramID int64) (int64, error)
+	EnsureUserRole(userID int64) error
 }
 
 // CredentialServiceInterface for user credentials operations

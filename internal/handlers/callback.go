@@ -167,6 +167,7 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 
 		// Check if this was a voice message and extract source
 		isVoice := false
+		isStart := false
 		source := "telegram" // Default source
 		keycloakSub := ""    // For WebSocket routing (Android uses keycloak_sub)
 		if payload.RequestMetadata != nil {
@@ -178,6 +179,9 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 			}
 			if ks, ok := payload.RequestMetadata["keycloak_sub"].(string); ok && ks != "" {
 				keycloakSub = ks
+			}
+			if st, ok := payload.RequestMetadata["is_start"].(bool); ok {
+				isStart = st
 			}
 		}
 
@@ -225,6 +229,14 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 			case err := <-done:
 				if err != nil {
 					log.Printf("[callback] Channel routing failed for task %s: %v", payload.TaskID, err)
+				} else if isStart && source == "telegram" {
+					// After successful /start response, send menu with buttons
+					menuText := "👇 Используй кнопки или просто напиши сообщение:"
+					if err := SendTelegramMessageWithKeyboard(deps.Config, chatID, menuText, getMainMenuKeyboard()); err != nil {
+						log.Printf("[callback] Failed to send menu after /start: %v", err)
+					} else {
+						log.Printf("[callback] Sent menu keyboard after /start to %d", chatID)
+					}
 				}
 			case <-ctx.Done():
 				log.Printf("[callback] Channel delivery timeout for task %s (channel=%s)", payload.TaskID, outputChannel)

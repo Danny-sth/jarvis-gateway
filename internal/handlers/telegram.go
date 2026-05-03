@@ -49,11 +49,15 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 		// Get message text
 		text := msg.Text
 
-		// Handle commands
-		if strings.HasPrefix(text, "/") {
-			handleTelegramCommand(w, msg, text, deps)
-			return
+		// Handle /start for registration only, then continue to LLM
+		isStartCommand := strings.HasPrefix(text, "/start")
+		if isStartCommand {
+			handleStartRegistration(w, msg, deps)
+			// Don't return - let the message go to LLM for greeting
 		}
+
+		// All commands go to LLM - no hardcoded responses
+		// /help, /history, /settings, /start - all handled by Duq
 
 		// Voice/audio data for queue (backend will transcribe)
 		var voiceData []byte
@@ -105,7 +109,7 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 
 		// Get allowed tools from RBAC if available
 		if deps.RBACService != nil {
-			// Ensure user exists
+			// Ensure user info is updated
 			username := ""
 			firstName := ""
 			lastName := ""
@@ -116,12 +120,26 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 			}
 			deps.RBACService.EnsureUser(telegramID, username, firstName, lastName)
 
-			tools, err := deps.RBACService.GetAllowedTools(telegramID)
+			// Get internal users.id for RBAC (not telegram_id!)
+			internalUserID, err := deps.RBACService.GetUserIDByTelegramID(telegramID)
 			if err != nil {
-				log.Printf("[telegram] RBAC error: %v", err)
+				log.Printf("[telegram] User not registered: telegram_id=%d, error=%v", telegramID, err)
+				// User not in DB yet - they need to register via /start
 			} else {
-				opts.AllowedTools = tools
-				log.Printf("[telegram] User %d has %d allowed tools", telegramID, len(tools))
+				// Ensure user has default 'user' role
+				if err := deps.RBACService.EnsureUserRole(internalUserID); err != nil {
+					log.Printf("[telegram] Failed to ensure user role: %v", err)
+				}
+
+				// Get allowed tools using internal user ID
+				tools, err := deps.RBACService.GetAllowedTools(internalUserID)
+				if err != nil {
+					log.Printf("[telegram] RBAC error: %v", err)
+				} else {
+					opts.AllowedTools = tools
+					log.Printf("[telegram] User %d (internal_id=%d) has %d allowed tools",
+						telegramID, internalUserID, len(tools))
+				}
 			}
 		}
 
@@ -224,6 +242,7 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 			"is_voice":   isVoice,
 			"input_type": inputType,
 			"source":     "telegram",
+			"is_start":   isStartCommand,
 		}
 		// Generate trace_id for request tracing
 		traceID := r.Header.Get("X-Trace-Id")
@@ -250,6 +269,9 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 			Payload:         payload,
 			RequestMetadata: requestMetadata,
 		}
+
+		// Send typing indicator before pushing to queue
+		SendTypingAction(deps.Config, msg.Chat.ID)
 
 		_, err := deps.QueueClient.Push(r.Context(), task)
 		if err != nil {

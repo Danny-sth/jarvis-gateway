@@ -229,9 +229,12 @@ func TestInlineKeyboardMarkupSerialization(t *testing.T) {
 // ==================== Mock Implementations ====================
 
 type MockRBACService struct {
-	allowedTools []string
-	ensureErr    error
-	toolsErr     error
+	allowedTools   []string
+	ensureErr      error
+	toolsErr       error
+	userIDErr      error
+	ensureRoleErr  error
+	mockInternalID int64
 }
 
 func (m *MockRBACService) GetAllowedTools(userID int64) ([]string, error) {
@@ -240,6 +243,20 @@ func (m *MockRBACService) GetAllowedTools(userID int64) ([]string, error) {
 
 func (m *MockRBACService) EnsureUser(userID int64, username, firstName, lastName string) error {
 	return m.ensureErr
+}
+
+func (m *MockRBACService) GetUserIDByTelegramID(telegramID int64) (int64, error) {
+	if m.userIDErr != nil {
+		return 0, m.userIDErr
+	}
+	if m.mockInternalID != 0 {
+		return m.mockInternalID, nil
+	}
+	return telegramID, nil // Default: return same ID for testing
+}
+
+func (m *MockRBACService) EnsureUserRole(userID int64) error {
+	return m.ensureRoleErr
 }
 
 type MockCredService struct {

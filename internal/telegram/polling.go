@@ -34,8 +34,9 @@ type Poller struct {
 
 // TelegramUpdate represents an incoming update from Telegram
 type TelegramUpdate struct {
-	UpdateID int64       `json:"update_id"`
-	Message  interface{} `json:"message,omitempty"`
+	UpdateID      int64       `json:"update_id"`
+	Message       interface{} `json:"message,omitempty"`
+	CallbackQuery interface{} `json:"callback_query,omitempty"`
 }
 
 // TelegramResponse represents the API response
