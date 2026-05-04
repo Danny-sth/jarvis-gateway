@@ -83,6 +83,18 @@ type InlineKeyboardMarkup struct {
 	InlineKeyboard [][]InlineKeyboardButton `json:"inline_keyboard"`
 }
 
+// Reply Keyboard types (persistent keyboard at bottom of chat)
+type KeyboardButton struct {
+	Text string `json:"text"`
+}
+
+type ReplyKeyboardMarkup struct {
+	Keyboard        [][]KeyboardButton `json:"keyboard"`
+	ResizeKeyboard  bool               `json:"resize_keyboard"`
+	IsPersistent    bool               `json:"is_persistent"`
+	OneTimeKeyboard bool               `json:"one_time_keyboard,omitempty"`
+}
+
 // Callback Query types
 type TelegramCallbackQuery struct {
 	ID      string           `json:"id"`

@@ -128,7 +128,7 @@ func AnswerCallbackQuery(cfg *config.Config, callbackID string, text string) err
 	return nil
 }
 
-// getMainMenuKeyboard returns the main menu inline keyboard
+// getMainMenuKeyboard returns the main menu inline keyboard (for callbacks)
 func getMainMenuKeyboard() *InlineKeyboardMarkup {
 	return &InlineKeyboardMarkup{
 		InlineKeyboard: [][]InlineKeyboardButton{
@@ -142,6 +142,56 @@ func getMainMenuKeyboard() *InlineKeyboardMarkup {
 			},
 		},
 	}
+}
+
+// getReplyKeyboard returns persistent keyboard at bottom of chat
+func getReplyKeyboard() *ReplyKeyboardMarkup {
+	return &ReplyKeyboardMarkup{
+		Keyboard: [][]KeyboardButton{
+			{
+				{Text: "🛠 Инструменты"},
+				{Text: "📜 История"},
+			},
+			{
+				{Text: "⚙️ Настройки"},
+				{Text: "❓ Помощь"},
+			},
+		},
+		ResizeKeyboard: true,
+		IsPersistent:   true,
+	}
+}
+
+// SendTelegramMessageWithReplyKeyboard sends a message with persistent reply keyboard
+func SendTelegramMessageWithReplyKeyboard(cfg *config.Config, chatID int64, text string, keyboard *ReplyKeyboardMarkup) error {
+	botToken := cfg.Telegram.BotToken
+	if botToken == "" {
+		return fmt.Errorf("telegram bot token not configured")
+	}
+
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+
+	payload := map[string]interface{}{
+		"chat_id":      chatID,
+		"text":         text,
+		"parse_mode":   "Markdown",
+		"reply_markup": keyboard,
+	}
+
+	jsonData, _ := json.Marshal(payload)
+	resp, err := http.Post(apiURL, "application/json", bytes.NewReader(jsonData))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("telegram API error: %s", string(body))
+	}
+
+	log.Printf("[telegram] Sent message with reply keyboard to %d", chatID)
+	return nil
 }
 
 // sendTelegramVoiceWithCaption generates TTS and sends voice note to Telegram
@@ -252,4 +302,46 @@ func truncateStr(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// BotCommand represents a Telegram bot command for menu
+type BotCommand struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
+}
+
+// SetBotCommands sets the bot menu commands
+func SetBotCommands(cfg *config.Config) error {
+	botToken := cfg.Telegram.BotToken
+	if botToken == "" {
+		return fmt.Errorf("telegram bot token not configured")
+	}
+
+	commands := []BotCommand{
+		{Command: "start", Description: "Главное меню"},
+		{Command: "tools", Description: "Статус инструментов"},
+		{Command: "settings", Description: "Настройки"},
+		{Command: "help", Description: "Помощь"},
+	}
+
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/setMyCommands", botToken)
+
+	payload := map[string]interface{}{
+		"commands": commands,
+	}
+
+	jsonData, _ := json.Marshal(payload)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(jsonData))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("telegram API error: %s", string(body))
+	}
+
+	log.Printf("[telegram] Bot menu commands set successfully")
+	return nil
 }

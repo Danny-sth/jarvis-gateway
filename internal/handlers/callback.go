@@ -230,12 +230,12 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 				if err != nil {
 					log.Printf("[callback] Channel routing failed for task %s: %v", payload.TaskID, err)
 				} else if isStart && source == "telegram" {
-					// After successful /start response, send menu with buttons
-					menuText := "👇 Используй кнопки или просто напиши сообщение:"
-					if err := SendTelegramMessageWithKeyboard(deps.Config, chatID, menuText, getMainMenuKeyboard()); err != nil {
+					// After successful /start response, send persistent reply keyboard
+					menuText := "👇 Используй кнопки меню внизу или просто напиши сообщение:"
+					if err := SendTelegramMessageWithReplyKeyboard(deps.Config, chatID, menuText, getReplyKeyboard()); err != nil {
 						log.Printf("[callback] Failed to send menu after /start: %v", err)
 					} else {
-						log.Printf("[callback] Sent menu keyboard after /start to %d", chatID)
+						log.Printf("[callback] Sent reply keyboard after /start to %d", chatID)
 					}
 				}
 			case <-ctx.Done():

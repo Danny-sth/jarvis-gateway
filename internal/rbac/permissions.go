@@ -8,6 +8,8 @@ var PermissionToTools = map[string][]string{
 	"tool:cortex_store":  {"cortex_store"},
 	"tool:system_info":   {"system_info"},
 
+	// Obsidian (connect - allows users to connect their vault)
+	"tool:obsidian:connect": {"connect_obsidian"},
 	// Obsidian (read group)
 	"tool:obsidian:read": {
 		"obsidian_read", "obsidian_search", "obsidian_folders",

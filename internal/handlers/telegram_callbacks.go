@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"strings"
+	"time"
 )
 
 // handleCallbackQuery processes inline keyboard button clicks
@@ -81,77 +85,9 @@ func handleMenuSettings(w http.ResponseWriter, chatID int64, deps *TelegramDeps)
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleMenuTools shows available tools and their status
+// handleMenuTools delegates to handleToolsCommand for real-time API status
 func handleMenuTools(w http.ResponseWriter, chatID int64, deps *TelegramDeps) {
-	// Get allowed tools from RBAC using internal user ID
-	var allowedTools []string
-	if deps.RBACService != nil {
-		// Resolve internal users.id from telegram_id (chatID)
-		internalUserID, err := deps.RBACService.GetUserIDByTelegramID(chatID)
-		if err == nil {
-			tools, err := deps.RBACService.GetAllowedTools(internalUserID)
-			if err == nil {
-				allowedTools = tools
-			}
-		}
-	}
-
-	// Check Google credentials
-	hasGoogle := false
-	if deps.CredService != nil {
-		creds, err := deps.CredService.GetCredentialsByTelegramID(chatID, "google")
-		if err == nil && creds != nil {
-			hasGoogle = true
-		}
-	}
-
-	// Build tools status
-	toolStatus := func(name string, available bool) string {
-		if available {
-			return "✅ " + name
-		}
-		return "❌ " + name
-	}
-
-	// Check which tools are available
-	hasCalendar := hasGoogle && containsTool(allowedTools, "calendar")
-	hasGmail := hasGoogle && containsTool(allowedTools, "gmail")
-	hasTasks := containsTool(allowedTools, "tasks")
-	hasWeather := containsTool(allowedTools, "weather")
-	hasSearch := containsTool(allowedTools, "web_search") || containsTool(allowedTools, "duckduckgo")
-
-	toolsText := fmt.Sprintf(`🛠 *Мои возможности*
-
-%s — события, напоминания
-%s — читать и отправлять
-%s — создавать и управлять
-%s — прогноз на день
-%s — информация из интернета
-
-💡 Для подключения сервисов обратись к администратору.`,
-		toolStatus("Календарь Google", hasCalendar),
-		toolStatus("Почта Gmail", hasGmail),
-		toolStatus("Задачи", hasTasks),
-		toolStatus("Погода", hasWeather),
-		toolStatus("Поиск", hasSearch))
-
-	keyboard := &InlineKeyboardMarkup{
-		InlineKeyboard: [][]InlineKeyboardButton{
-			{{Text: "« Назад", CallbackData: "menu_back"}},
-		},
-	}
-	SendTelegramMessageWithKeyboard(deps.Config, chatID, toolsText, keyboard)
-	w.WriteHeader(http.StatusOK)
-}
-
-// containsTool checks if tool is in the list
-func containsTool(tools []string, name string) bool {
-	for _, t := range tools {
-		if t == name {
-			return true
-		}
-	}
-	return false
+	handleToolsCommand(w, chatID, deps)
 }
 
 // handleMenuHelp shows help message
@@ -192,5 +128,107 @@ func handleMenuBack(w http.ResponseWriter, chatID int64, deps *TelegramDeps) {
 Выбери действие или просто отправь мне сообщение!`
 
 	SendTelegramMessageWithKeyboard(deps.Config, chatID, welcomeText, getMainMenuKeyboard())
+	w.WriteHeader(http.StatusOK)
+}
+
+// ToolStatusResponse represents the API response from Duq /api/tools/status
+type ToolStatusResponse struct {
+	Total       int          `json:"total"`
+	Available   int          `json:"available"`
+	Unavailable int          `json:"unavailable"`
+	Tools       []ToolStatus `json:"tools"`
+}
+
+// ToolStatus represents a single tool's status
+type ToolStatus struct {
+	Name             string   `json:"name"`
+	Description      string   `json:"description"`
+	Category         string   `json:"category"`
+	Available        bool     `json:"available"`
+	RequiredServices []string `json:"required_services"`
+	MissingServices  []string `json:"missing_services"`
+	OwnerOnly        bool     `json:"owner_only"`
+}
+
+// handleToolsCommand fetches real-time tool status from Duq API
+func handleToolsCommand(w http.ResponseWriter, chatID int64, deps *TelegramDeps) {
+	// Fetch from Duq API
+	duqURL := deps.Config.DuqURL
+	if duqURL == "" {
+		duqURL = "http://duq-core:8081"
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(duqURL + "/api/tools/status")
+	if err != nil {
+		log.Printf("[telegram] Failed to fetch tools status: %v", err)
+		SendTelegramMessage(deps.Config, chatID, "⚠️ Не удалось получить статус инструментов")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[telegram] Failed to read tools status: %v", err)
+		SendTelegramMessage(deps.Config, chatID, "⚠️ Ошибка при чтении ответа")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var status ToolStatusResponse
+	if err := json.Unmarshal(body, &status); err != nil {
+		log.Printf("[telegram] Failed to parse tools status: %v, body: %s", err, string(body))
+		SendTelegramMessage(deps.Config, chatID, "⚠️ Ошибка при разборе ответа")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Group tools by category
+	categories := make(map[string][]ToolStatus)
+	for _, tool := range status.Tools {
+		categories[tool.Category] = append(categories[tool.Category], tool)
+	}
+
+	// Build message with top categories
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("🛠 *Статус инструментов*\n\n"))
+	sb.WriteString(fmt.Sprintf("Всего: %d | ✅ %d | ❌ %d\n\n", status.Total, status.Available, status.Unavailable))
+
+	// Show top categories with counts
+	for category, tools := range categories {
+		availCount := 0
+		for _, t := range tools {
+			if t.Available {
+				availCount++
+			}
+		}
+
+		categoryIcon := "📦"
+		switch category {
+		case "Google Mail", "Google Calendar", "Google Drive", "Google Tasks":
+			categoryIcon = "📧"
+		case "Weather":
+			categoryIcon = "🌤"
+		case "Web":
+			categoryIcon = "🌐"
+		case "Task Management":
+			categoryIcon = "📋"
+		case "File System":
+			categoryIcon = "📁"
+		case "System":
+			categoryIcon = "⚙️"
+		case "Obsidian":
+			categoryIcon = "📝"
+		case "Scheduling":
+			categoryIcon = "⏰"
+		}
+
+		sb.WriteString(fmt.Sprintf("%s *%s*: %d/%d\n", categoryIcon, category, availCount, len(tools)))
+	}
+
+	sb.WriteString("\n💡 Все инструменты доступны через диалог с Duq")
+
+	SendTelegramMessage(deps.Config, chatID, sb.String())
 	w.WriteHeader(http.StatusOK)
 }

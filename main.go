@@ -440,6 +440,13 @@ func main() {
 		}
 	}
 
+	// Set bot menu commands (always, regardless of polling mode)
+	if cfg.Telegram.BotToken != "" {
+		if err := handlers.SetBotCommands(cfg); err != nil {
+			log.Printf("[telegram] Failed to set bot commands: %v", err)
+		}
+	}
+
 	// Start server based on TLS configuration
 	if cfg.TLS.Enabled && cfg.TLS.Domain != "" {
 		// CertMagic: automatic Let's Encrypt certificates

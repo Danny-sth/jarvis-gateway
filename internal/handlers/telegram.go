@@ -56,8 +56,31 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 			// Don't return - let the message go to LLM for greeting
 		}
 
-		// All commands go to LLM - no hardcoded responses
-		// /help, /history, /settings, /start - all handled by Duq
+		// Handle /tools command or button "🛠 Инструменты"
+		if text == "/tools" || text == "🛠 Инструменты" {
+			handleToolsCommand(w, msg.Chat.ID, deps)
+			return
+		}
+
+		// Handle /settings command or button "⚙️ Настройки"
+		if text == "/settings" || text == "⚙️ Настройки" {
+			handleMenuSettings(w, msg.Chat.ID, deps)
+			return
+		}
+
+		// Handle /help command or button "❓ Помощь"
+		if text == "/help" || text == "❓ Помощь" {
+			handleMenuHelp(w, msg.Chat.ID, deps)
+			return
+		}
+
+		// Handle button "📜 История"
+		if text == "📜 История" {
+			handleMenuHistory(w, msg.Chat.ID, deps)
+			return
+		}
+
+		// All other commands go to LLM - no hardcoded responses
 
 		// Voice/audio data for queue (backend will transcribe)
 		var voiceData []byte
