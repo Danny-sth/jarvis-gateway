@@ -89,8 +89,22 @@ func main() {
 	go wsHub.Run(ctx)
 	log.Printf("[websocket] Hub started")
 
+	// Build channel router (SOLID: easily extensible with new channels)
+	// Note: TTS is done by Duq, channel only converts MP3→OGG
+	// Must be created BEFORE db listener so broadcast works
+	channelRouter := channels.NewBuilder().
+		WithTelegram(cfg.Telegram.BotToken).
+		WithTelegramUserLookup(dbClient.GetTelegramIDByKeycloakSub). // For multi-channel sync
+		WithAndroid(wsHub). // Android channel via WebSocket
+		WithEmail().
+		WithObsidian().
+		WithSilent().
+		Build()
+
+	log.Printf("[channels] Router initialized with telegram, android, email, obsidian, silent channels")
+
 	// PostgreSQL LISTEN/NOTIFY for real-time message sync
-	// When new message is inserted, notify all connected Android clients
+	// Fan-out to all channels except source (multi-channel sync)
 	log.Printf("[db-listener] Initializing PostgreSQL LISTEN/NOTIFY...")
 	dbListener := db.NewListener(db.Config{
 		Host:     cfg.Database.Host,
@@ -99,7 +113,7 @@ func main() {
 		Password: cfg.Database.Password,
 		Name:     cfg.Database.Name,
 	}, func(notification *db.MessageNotification) {
-		// Send to all WebSocket connections for this user
+		// Send to Android via WebSocket (always, for real-time UI)
 		wsHub.SendToUser(notification.KeycloakSub, &websocket.Message{
 			Type:           "new_message",
 			MessageID:      notification.MessageID,
@@ -107,24 +121,25 @@ func main() {
 			Role:           notification.Role,
 			Content:        notification.Content,
 		})
+
+		// Fan-out to other channels (Telegram sync)
+		// Skip if source is unknown or not set
+		if notification.SourceChannel != "" && notification.SourceChannel != "unknown" {
+			channelRouter.Broadcast(&channels.SyncMessage{
+				MessageID:      notification.MessageID,
+				ConversationID: notification.ConversationID,
+				UserID:         notification.KeycloakSub,
+				Role:           notification.Role,
+				Content:        notification.Content,
+				SourceChannel:  notification.SourceChannel,
+			})
+		}
 	})
 	if err := dbListener.Start(ctx); err != nil {
 		log.Printf("[db-listener] WARNING: Failed to start listener: %v", err)
 		// Non-fatal - real-time sync won't work but app still functions
 	}
 	defer dbListener.Close()
-
-	// Build channel router (SOLID: easily extensible with new channels)
-	// Note: TTS is done by Duq, channel only converts MP3→OGG
-	channelRouter := channels.NewBuilder().
-		WithTelegram(cfg.Telegram.BotToken).
-		WithAndroid(wsHub). // Android channel via WebSocket
-		WithEmail().
-		WithObsidian().
-		WithSilent().
-		Build()
-
-	log.Printf("[channels] Router initialized with telegram, android, email, obsidian, silent channels")
 
 	// Initialize Keycloak admin service for user management
 	// IMPORTANT: Keycloak is the PRIMARY SOURCE OF TRUTH for users - it MUST be configured

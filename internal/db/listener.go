@@ -17,6 +17,7 @@ type MessageNotification struct {
 	MessageID      string `json:"message_id"`
 	Role           string `json:"role"`
 	Content        string `json:"content"`
+	SourceChannel  string `json:"source_channel"`
 	CreatedAt      string `json:"created_at"`
 }
 
@@ -96,8 +97,8 @@ func (l *Listener) processNotifications(ctx context.Context) {
 				continue
 			}
 
-			log.Printf("[db-listener] New message: user=%s, role=%s, conv=%s",
-				msg.KeycloakSub, msg.Role, msg.ConversationID[:8])
+			log.Printf("[db-listener] New message: user=%s, role=%s, source=%s, conv=%s",
+				msg.KeycloakSub, msg.Role, msg.SourceChannel, msg.ConversationID[:8])
 
 			// Call handler
 			if l.handler != nil {

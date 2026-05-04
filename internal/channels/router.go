@@ -3,7 +3,40 @@ package channels
 import (
 	"fmt"
 	"log"
+	"sync"
 )
+
+// SyncMessage represents a message to be synced between channels
+type SyncMessage struct {
+	MessageID      string `json:"message_id"`
+	ConversationID string `json:"conversation_id"`
+	UserID         string `json:"user_id"` // keycloak_sub
+	Role           string `json:"role"`    // "user" or "assistant"
+	Content        string `json:"content"`
+	SourceChannel  string `json:"source_channel"` // "telegram", "android", etc.
+}
+
+// SyncChannel interface for channels that support history sync
+type SyncChannel interface {
+	Channel
+	// SyncSend delivers a synced message from another channel
+	SyncSend(msg *SyncMessage) error
+	// IsUserConnected checks if user has connection on this channel
+	IsUserConnected(userID string) bool
+}
+
+// PendingSync tracks pending Telegram messages for editMessage
+type PendingSync struct {
+	mu       sync.RWMutex
+	pending  map[string]*PendingMessage // userID -> pending message
+}
+
+// PendingMessage holds state for Telegram editMessage
+type PendingMessage struct {
+	TelegramMessageID int64    // Message ID to edit
+	ChatID            int64    // Telegram chat ID
+	Quotes            []string // Accumulated user messages
+}
 
 // ResponseContext contains all info needed to route a response
 type ResponseContext struct {
@@ -115,4 +148,80 @@ func (r *Router) Route(channelName string, ctx *ResponseContext) error {
 func (r *Router) routeWithFallbackNotice(failed, fallback Channel, ctx *ResponseContext) error {
 	// This is handled by individual channels now
 	return fallback.Send(ctx)
+}
+
+// Broadcast sends a sync message to all channels except the source
+// This implements fan-out pattern for multi-channel history sync
+func (r *Router) Broadcast(msg *SyncMessage) {
+	if msg.SourceChannel == "" {
+		log.Printf("[router] WARNING: Broadcast called without source_channel")
+		return
+	}
+
+	log.Printf("[router] Broadcasting: user=%s role=%s source=%s",
+		truncateID(msg.UserID), msg.Role, msg.SourceChannel)
+
+	for name, ch := range r.channels {
+		// Skip source channel - don't echo back
+		if name == msg.SourceChannel {
+			continue
+		}
+
+		// Check if channel supports sync
+		syncCh, ok := ch.(SyncChannel)
+		if !ok {
+			continue
+		}
+
+		// Check if user is connected to this channel
+		if !syncCh.IsUserConnected(msg.UserID) {
+			log.Printf("[router] User %s not connected to %s, skipping sync",
+				truncateID(msg.UserID), name)
+			continue
+		}
+
+		// Send sync message
+		if err := syncCh.SyncSend(msg); err != nil {
+			log.Printf("[router] Failed to sync to %s: %v", name, err)
+		} else {
+			log.Printf("[router] Synced to %s: user=%s role=%s",
+				name, truncateID(msg.UserID), msg.Role)
+		}
+	}
+}
+
+// truncateID returns first 8 chars of ID for logging
+func truncateID(id string) string {
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8]
+}
+
+// NewPendingSync creates a new pending sync tracker
+func NewPendingSync() *PendingSync {
+	return &PendingSync{
+		pending: make(map[string]*PendingMessage),
+	}
+}
+
+// Get returns pending message for user
+func (p *PendingSync) Get(userID string) *PendingMessage {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.pending[userID]
+}
+
+// Set stores pending message for user
+func (p *PendingSync) Set(userID string, msg *PendingMessage) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pending[userID] = msg
+}
+
+// Clear removes pending message for user
+func (p *PendingSync) Clear(userID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.pending, userID)
 }

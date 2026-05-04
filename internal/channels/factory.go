@@ -77,3 +77,11 @@ func (b *RouterBuilder) Build() *Router {
 func (b *RouterBuilder) TelegramChannel() *TelegramChannel {
 	return b.telegram
 }
+
+// WithTelegramUserLookup sets the userLookup function for Telegram sync
+func (b *RouterBuilder) WithTelegramUserLookup(lookup UserLookup) *RouterBuilder {
+	if b.telegram != nil {
+		b.telegram.SetUserLookup(lookup)
+	}
+	return b
+}

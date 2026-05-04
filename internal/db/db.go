@@ -173,6 +173,21 @@ func (c *Client) GetUserByKeycloakSub(keycloakSub string) (*User, error) {
 	return &user, nil
 }
 
+// GetTelegramIDByKeycloakSub returns telegram_id for a user by keycloak_sub
+// Used for multi-channel sync (routing messages to Telegram)
+func (c *Client) GetTelegramIDByKeycloakSub(keycloakSub string) (int64, error) {
+	var telegramID int64
+	query := `SELECT telegram_id FROM users WHERE keycloak_sub = $1 AND telegram_id IS NOT NULL`
+	err := c.db.QueryRow(query, keycloakSub).Scan(&telegramID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil // User exists but no telegram_id
+		}
+		return 0, fmt.Errorf("failed to get telegram_id: %w", err)
+	}
+	return telegramID, nil
+}
+
 // CreateUserFromTelegram creates a new user from Telegram registration
 // keycloakSub is REQUIRED - Keycloak is the primary source of truth
 // Returns the created user or error
