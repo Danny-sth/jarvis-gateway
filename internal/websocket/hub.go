@@ -22,14 +22,20 @@ type Connection struct {
 
 // Message represents a message to send via WebSocket
 type Message struct {
-	Type            string    `json:"type"`                       // "response", "notification", "ping"
-	TaskID          string    `json:"task_id,omitempty"`          // Task ID this message relates to
-	Text            string    `json:"text,omitempty"`             // Text response
-	VoiceData       string    `json:"voice_data,omitempty"`       // Base64 encoded audio
-	Waveform        []float64 `json:"waveform,omitempty"`         // Audio waveform for visualization
+	Type            string    `json:"type"`                        // "response", "notification", "ping", "new_message"
+	TaskID          string    `json:"task_id,omitempty"`           // Task ID this message relates to
+	Text            string    `json:"text,omitempty"`              // Text response
+	VoiceData       string    `json:"voice_data,omitempty"`        // Base64 encoded audio
+	Waveform        []float64 `json:"waveform,omitempty"`          // Audio waveform for visualization
 	AudioDurationMs int       `json:"audio_duration_ms,omitempty"` // Audio duration in milliseconds
-	Error           string    `json:"error,omitempty"`            // Error message if any
-	Timestamp       int64     `json:"timestamp"`                  // Unix timestamp
+	Error           string    `json:"error,omitempty"`             // Error message if any
+	Timestamp       int64     `json:"timestamp"`                   // Unix timestamp
+
+	// History sync fields (type: "new_message")
+	MessageID      string `json:"message_id,omitempty"`      // Message UUID
+	ConversationID string `json:"conversation_id,omitempty"` // Conversation UUID
+	Role           string `json:"role,omitempty"`            // "user" or "assistant"
+	Content        string `json:"content,omitempty"`         // Message content
 }
 
 // Hub manages all WebSocket connections
