@@ -480,10 +480,10 @@ func main() {
 		}
 	}
 
-	// Set bot menu commands (always, regardless of polling mode)
+	// Delete bot menu commands (use buttons instead)
 	if cfg.Telegram.BotToken != "" {
-		if err := handlers.SetBotCommands(cfg); err != nil {
-			log.Printf("[telegram] Failed to set bot commands: %v", err)
+		if err := handlers.DeleteBotCommands(cfg); err != nil {
+			log.Printf("[telegram] Failed to delete bot commands: %v", err)
 		}
 	}
 

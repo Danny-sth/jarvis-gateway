@@ -310,28 +310,16 @@ type BotCommand struct {
 	Description string `json:"description"`
 }
 
-// SetBotCommands sets the bot menu commands
-func SetBotCommands(cfg *config.Config) error {
+// DeleteBotCommands removes all bot menu commands (use buttons instead)
+func DeleteBotCommands(cfg *config.Config) error {
 	botToken := cfg.Telegram.BotToken
 	if botToken == "" {
 		return fmt.Errorf("telegram bot token not configured")
 	}
 
-	commands := []BotCommand{
-		{Command: "start", Description: "Главное меню"},
-		{Command: "tools", Description: "Статус инструментов"},
-		{Command: "settings", Description: "Настройки"},
-		{Command: "help", Description: "Помощь"},
-	}
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/deleteMyCommands", botToken)
 
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/setMyCommands", botToken)
-
-	payload := map[string]interface{}{
-		"commands": commands,
-	}
-
-	jsonData, _ := json.Marshal(payload)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(jsonData))
+	resp, err := http.Post(url, "application/json", bytes.NewReader([]byte("{}")))
 	if err != nil {
 		return err
 	}
@@ -342,6 +330,6 @@ func SetBotCommands(cfg *config.Config) error {
 		return fmt.Errorf("telegram API error: %s", string(body))
 	}
 
-	log.Printf("[telegram] Bot menu commands set successfully")
+	log.Printf("[telegram] Bot menu commands deleted (using buttons only)")
 	return nil
 }
