@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background circle - purple -->
+  <circle cx="256" cy="256" r="256" fill="#7c3aed"/>
+
+  <!-- Inner glow -->
+  <circle cx="256" cy="256" r="230" fill="#8b5cf6"/>
+
+  <!-- Duck body/head - yellow -->
+  <ellipse cx="256" cy="290" rx="130" ry="120" fill="#fbbf24"/>
+
+  <!-- Duck head top -->
+  <circle cx="256" cy="210" r="95" fill="#fcd34d"/>
+
+  <!-- Eye white left -->
+  <ellipse cx="215" cy="195" rx="30" ry="35" fill="white"/>
+
+  <!-- Eye white right -->
+  <ellipse cx="297" cy="195" rx="30" ry="35" fill="white"/>
+
+  <!-- Pupil left -->
+  <circle cx="222" cy="200" r="15" fill="#1e1b4b"/>
+
+  <!-- Pupil right -->
+  <circle cx="304" cy="200" r="15" fill="#1e1b4b"/>
+
+  <!-- Eye shine left -->
+  <circle cx="227" cy="194" r="6" fill="white"/>
+
+  <!-- Eye shine right -->
+  <circle cx="309" cy="194" r="6" fill="white"/>
+
+  <!-- Beak -->
+  <ellipse cx="256" cy="270" rx="45" ry="28" fill="#f97316"/>
+
+  <!-- Beak highlight -->
+  <ellipse cx="256" cy="262" rx="35" ry="15" fill="#fb923c"/>
+
+  <!-- Beak line -->
+  <line x1="211" y1="270" x2="301" y2="270" stroke="#ea580c" stroke-width="3"/>
+
+  <!-- Beak nostrils -->
+  <circle cx="242" cy="262" r="4" fill="#ea580c"/>
+  <circle cx="270" cy="262" r="4" fill="#ea580c"/>
+
+  <!-- Cheek blush left -->
+  <ellipse cx="170" cy="250" rx="20" ry="12" fill="#fca5a5" opacity="0.6"/>
+
+  <!-- Cheek blush right -->
+  <ellipse cx="342" cy="250" rx="20" ry="12" fill="#fca5a5" opacity="0.6"/>
+
+  <!-- Tech circuit accents -->
+  <path d="M75 400 L110 400 L110 420 L130 420" stroke="rgba(255,255,255,0.4)" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M437 400 L402 400 L402 420 L382 420" stroke="rgba(255,255,255,0.4)" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <circle cx="75" cy="400" r="5" fill="rgba(255,255,255,0.5)"/>
+  <circle cx="437" cy="400" r="5" fill="rgba(255,255,255,0.5)"/>
+
+  <!-- Outer ring -->
+  <circle cx="256" cy="256" r="248" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="3"/>
+</svg>
