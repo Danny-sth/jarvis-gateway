@@ -8,6 +8,7 @@ import (
 	"duq-gateway/internal/config"
 	"duq-gateway/internal/db"
 	"duq-gateway/internal/keycloak"
+	"duq-gateway/internal/rbac"
 	"duq-gateway/internal/registration"
 )
 
@@ -16,14 +17,16 @@ type RegistrationDeps struct {
 	Config              *config.Config
 	DBClient            *db.Client
 	RegistrationService *registration.Service
+	RBACService         *rbac.Service
 }
 
 // NewRegistrationDeps creates a new RegistrationDeps with the registration service
-func NewRegistrationDeps(cfg *config.Config, dbClient *db.Client, keycloakAdmin *keycloak.AdminService) *RegistrationDeps {
+func NewRegistrationDeps(cfg *config.Config, dbClient *db.Client, keycloakAdmin *keycloak.AdminService, rbacService *rbac.Service) *RegistrationDeps {
 	return &RegistrationDeps{
 		Config:              cfg,
 		DBClient:            dbClient,
 		RegistrationService: registration.NewService(cfg, dbClient, keycloakAdmin),
+		RBACService:         rbacService,
 	}
 }
 
@@ -89,6 +92,16 @@ func Register(deps *RegistrationDeps) http.HandlerFunc {
 		if err != nil {
 			handleRegistrationError(w, err, resp)
 			return
+		}
+
+		// Assign default 'user' role via RBAC
+		if deps.RBACService != nil && resp.User != nil {
+			if err := deps.RBACService.EnsureUserRole(resp.User.ID); err != nil {
+				log.Printf("[registration] Failed to assign user role: %v", err)
+				// Don't fail registration - role can be assigned later
+			} else {
+				log.Printf("[registration] Assigned default 'user' role to user %d", resp.User.ID)
+			}
 		}
 
 		// Success response

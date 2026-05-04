@@ -196,7 +196,7 @@ func main() {
 	mux.HandleFunc("GET /api/auth/keycloak/userinfo", handlers.KeycloakUserInfo(cfg))
 
 	// Public Registration endpoints (rate limited to prevent brute force)
-	registrationDeps := handlers.NewRegistrationDeps(cfg, dbClient, keycloakAdmin)
+	registrationDeps := handlers.NewRegistrationDeps(cfg, dbClient, keycloakAdmin, rbacService)
 	mux.HandleFunc("POST /api/auth/register", middleware.RateLimitFunc(authLimiter, handlers.Register(registrationDeps)))
 	mux.HandleFunc("GET /api/auth/verify-email", middleware.RateLimitFunc(authLimiter, handlers.VerifyEmail(registrationDeps)))
 	mux.HandleFunc("POST /api/auth/resend-verification", middleware.RateLimitFunc(authLimiter, handlers.ResendVerification(registrationDeps)))
