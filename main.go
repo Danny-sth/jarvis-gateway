@@ -230,6 +230,7 @@ func main() {
 	// Telegram endpoints (rate limited)
 	mux.HandleFunc("POST /api/telegram/webhook", middleware.RateLimitFunc(telegramLimiter, handlers.TelegramWithDeps(telegramDeps)))
 	mux.HandleFunc("POST /api/telegram/send", handlers.TelegramSend(cfg))
+	mux.HandleFunc("POST /api/telegram/reaction", handlers.TelegramReactionHandler(cfg))
 
 	// Voice endpoint REMOVED - all requests through Redis queue
 

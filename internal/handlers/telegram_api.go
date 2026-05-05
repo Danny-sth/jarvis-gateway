@@ -395,6 +395,70 @@ func setMessageReactionSync(cfg *config.Config, chatID int64, messageID int64, e
 	return nil
 }
 
+// SupportedReactions is the list of emoji Telegram supports for reactions
+var SupportedReactions = map[string]bool{
+	"👍": true, "👎": true, "❤️": true, "🔥": true, "🥰": true, "👏": true,
+	"😁": true, "🤔": true, "🤯": true, "😱": true, "🤬": true, "😢": true,
+	"🎉": true, "🤩": true, "🤮": true, "💩": true, "🙏": true, "👌": true,
+	"🕊": true, "🤡": true, "🥱": true, "🥴": true, "😍": true, "🐳": true,
+	"❤️‍🔥": true, "🌚": true, "🌭": true, "💯": true, "🤣": true, "⚡️": true,
+	"🍌": true, "🏆": true, "💔": true, "🤨": true, "😐": true, "🍓": true,
+	"🍾": true, "💋": true, "🖕": true, "😈": true, "😴": true, "😭": true,
+	"🤓": true, "👻": true, "👨‍💻": true, "👀": true, "🎃": true, "🙈": true,
+	"😇": true, "😨": true, "🤝": true, "✍️": true, "🤗": true, "🫡": true,
+	"🎅": true, "🎄": true, "☃️": true, "💅": true, "🤪": true, "🗿": true,
+	"🆒": true, "💘": true, "🙉": true, "🦄": true, "😘": true, "💊": true,
+	"🙊": true, "😎": true, "👾": true, "🤷‍♂️": true, "🤷": true, "🤷‍♀️": true, "😡": true,
+}
+
+// SetReactionRequest is the request body for POST /api/telegram/reaction
+type SetReactionRequest struct {
+	ChatID    int64  `json:"chat_id"`
+	MessageID int64  `json:"message_id"`
+	Emoji     string `json:"emoji"`
+}
+
+// TelegramReactionHandler handles POST /api/telegram/reaction
+// This endpoint is called by Duq to set reactions on user messages
+func TelegramReactionHandler(cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req SetReactionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Printf("[telegram-reaction] Invalid JSON: %v", err)
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if req.ChatID == 0 || req.MessageID == 0 || req.Emoji == "" {
+			http.Error(w, "chat_id, message_id, and emoji required", http.StatusBadRequest)
+			return
+		}
+
+		// Validate emoji is supported
+		if !SupportedReactions[req.Emoji] {
+			log.Printf("[telegram-reaction] Unsupported emoji: %s", req.Emoji)
+			http.Error(w, "Unsupported emoji for Telegram reactions", http.StatusBadRequest)
+			return
+		}
+
+		// Set the reaction
+		err := setMessageReactionSync(cfg, req.ChatID, req.MessageID, ReactionEmoji(req.Emoji))
+		if err != nil {
+			log.Printf("[telegram-reaction] Failed to set reaction: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}
+}
+
 // ClearMessageReaction removes all reactions from a message
 func ClearMessageReaction(cfg *config.Config, chatID int64, messageID int64) {
 	go func() {
