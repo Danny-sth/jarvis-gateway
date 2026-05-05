@@ -86,7 +86,10 @@ func (c *Client) UpdateChannelMembership(userID int64, channelTelegramID int64, 
 			ON CONFLICT (user_id, channel_id)
 			DO UPDATE SET is_active = TRUE, left_at = NULL
 		`, userID, channelTelegramID)
-		return err
+		if err != nil {
+			return fmt.Errorf("update channel membership (join) failed: %w", err)
+		}
+		return nil
 	}
 
 	_, err := c.db.Exec(`
@@ -94,5 +97,8 @@ func (c *Client) UpdateChannelMembership(userID int64, channelTelegramID int64, 
 		SET is_active = FALSE, left_at = NOW()
 		WHERE user_id = $1 AND channel_id = $2
 	`, userID, channelTelegramID)
-	return err
+	if err != nil {
+		return fmt.Errorf("update channel membership (leave) failed: %w", err)
+	}
+	return nil
 }
