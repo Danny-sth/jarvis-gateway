@@ -110,6 +110,7 @@ type TelegramCallbackQuery struct {
 type TelegramUpdateFull struct {
 	UpdateID      int                    `json:"update_id"`
 	Message       *TelegramMessage       `json:"message,omitempty"`
+	ChannelPost   *TelegramMessage       `json:"channel_post,omitempty"` // Posts in channels
 	CallbackQuery *TelegramCallbackQuery `json:"callback_query,omitempty"`
 }
 
