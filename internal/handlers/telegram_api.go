@@ -439,10 +439,26 @@ func TelegramReactionHandler(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		// Let Telegram API decide if emoji is valid - no pre-validation
+		log.Printf("[telegram-reaction] Attempting emoji='%s' on chat=%d msg=%d", req.Emoji, req.ChatID, req.MessageID)
+
+		// Try the requested emoji first
 		err := setMessageReactionSync(cfg, req.ChatID, req.MessageID, ReactionEmoji(req.Emoji))
 		if err != nil {
-			log.Printf("[telegram-reaction] Failed to set reaction: %v", err)
+			log.Printf("[telegram-reaction] Failed with '%s': %v", req.Emoji, err)
+
+			// Fallback: try 👍 if original emoji failed (group may have restricted reactions)
+			if req.Emoji != "👍" {
+				log.Printf("[telegram-reaction] Trying fallback emoji '👍'")
+				fallbackErr := setMessageReactionSync(cfg, req.ChatID, req.MessageID, ReactionEmoji("👍"))
+				if fallbackErr == nil {
+					log.Printf("[telegram-reaction] Fallback '👍' succeeded")
+					w.WriteHeader(http.StatusOK)
+					w.Write([]byte(`{"ok":true,"fallback":"👍"}`))
+					return
+				}
+				log.Printf("[telegram-reaction] Fallback also failed: %v", fallbackErr)
+			}
+
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
