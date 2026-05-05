@@ -36,6 +36,7 @@ type Poller struct {
 type TelegramUpdate struct {
 	UpdateID      int64       `json:"update_id"`
 	Message       interface{} `json:"message,omitempty"`
+	ChannelPost   interface{} `json:"channel_post,omitempty"` // Posts in channels
 	CallbackQuery interface{} `json:"callback_query,omitempty"`
 }
 

@@ -31,12 +31,15 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 			return
 		}
 
-		if update.Message == nil {
+		// Use Message or ChannelPost (for channel posts)
+		msg := update.Message
+		if msg == nil {
+			msg = update.ChannelPost
+		}
+		if msg == nil {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-
-		msg := update.Message
 
 		if msg.From != nil && msg.From.IsBot {
 			w.WriteHeader(http.StatusOK)

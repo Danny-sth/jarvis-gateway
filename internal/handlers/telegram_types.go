@@ -2,8 +2,9 @@ package handlers
 
 // Telegram Update structures
 type TelegramUpdate struct {
-	UpdateID int              `json:"update_id"`
-	Message  *TelegramMessage `json:"message,omitempty"`
+	UpdateID    int              `json:"update_id"`
+	Message     *TelegramMessage `json:"message,omitempty"`
+	ChannelPost *TelegramMessage `json:"channel_post,omitempty"` // Posts in channels
 }
 
 type TelegramMessage struct {
