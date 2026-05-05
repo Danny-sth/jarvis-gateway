@@ -135,7 +135,7 @@ func (p *Poller) deleteWebhook() error {
 // poll performs one long polling request
 func (p *Poller) poll() error {
 	url := fmt.Sprintf(
-		"https://api.telegram.org/bot%s/getUpdates?timeout=%d&offset=%d&allowed_updates=[\"message\",\"callback_query\"]",
+		"https://api.telegram.org/bot%s/getUpdates?timeout=%d&offset=%d&allowed_updates=[\"message\",\"channel_post\",\"callback_query\"]",
 		p.config.Telegram.BotToken,
 		PollingTimeout,
 		p.lastOffset,
