@@ -445,9 +445,10 @@ func main() {
 	// Exclude admin login and public APIs from CSRF
 	csrfConfig.ExcludePaths = append(csrfConfig.ExcludePaths,
 		"/admin/login", "/admin/logout",
-		"/api/auth/register",     // Public registration API
-		"/api/auth/verify-email", // Email verification
-		"/api/auth/login",        // Public login API
+		"/api/auth/register",       // Public registration API
+		"/api/auth/verify-email",   // Email verification
+		"/api/auth/login",          // Public login API
+		"/api/telegram/reaction",   // Internal: Duq → Gateway reaction calls
 	)
 	csrfStore := middleware.NewCSRFStore(24 * time.Hour)
 
