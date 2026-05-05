@@ -439,14 +439,7 @@ func TelegramReactionHandler(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		// Validate emoji is supported
-		if !SupportedReactions[req.Emoji] {
-			log.Printf("[telegram-reaction] Unsupported emoji: %s", req.Emoji)
-			http.Error(w, "Unsupported emoji for Telegram reactions", http.StatusBadRequest)
-			return
-		}
-
-		// Set the reaction
+		// Let Telegram API decide if emoji is valid - no pre-validation
 		err := setMessageReactionSync(cfg, req.ChatID, req.MessageID, ReactionEmoji(req.Emoji))
 		if err != nil {
 			log.Printf("[telegram-reaction] Failed to set reaction: %v", err)
