@@ -7,14 +7,16 @@ type TelegramUpdate struct {
 }
 
 type TelegramMessage struct {
-	MessageID int               `json:"message_id"`
-	From      *TelegramUser     `json:"from,omitempty"`
-	Chat      *TelegramChat     `json:"chat"`
-	Text      string            `json:"text,omitempty"`
-	Voice     *TelegramVoice    `json:"voice,omitempty"`
-	Audio     *TelegramAudio    `json:"audio,omitempty"`
-	Photo     []TelegramPhoto   `json:"photo,omitempty"`
-	Document  *TelegramDocument `json:"document,omitempty"`
+	MessageID       int               `json:"message_id"`
+	From            *TelegramUser     `json:"from,omitempty"`
+	Chat            *TelegramChat     `json:"chat"`
+	Text            string            `json:"text,omitempty"`
+	Voice           *TelegramVoice    `json:"voice,omitempty"`
+	Audio           *TelegramAudio    `json:"audio,omitempty"`
+	Photo           []TelegramPhoto   `json:"photo,omitempty"`
+	Document        *TelegramDocument `json:"document,omitempty"`
+	ReplyToMessage  *TelegramMessage  `json:"reply_to_message,omitempty"`
+	MessageThreadID int               `json:"message_thread_id,omitempty"`
 }
 
 type TelegramUser struct {
@@ -142,4 +144,62 @@ type TelegramSendRequest struct {
 type DuqTranscribeResponse struct {
 	Transcription string `json:"transcription"`
 	Success       bool   `json:"success"`
+}
+
+// ==================== Group Chat Types ====================
+
+// ChatMember represents a member of a chat (from getChatMember API)
+type ChatMember struct {
+	User        *TelegramUser `json:"user"`
+	Status      string        `json:"status"` // creator, administrator, member, restricted, left, kicked
+	CustomTitle string        `json:"custom_title,omitempty"`
+}
+
+// ChatFullInfo represents full chat information (from getChat API)
+type ChatFullInfo struct {
+	ID          int64  `json:"id"`
+	Type        string `json:"type"`
+	Title       string `json:"title,omitempty"`
+	Username    string `json:"username,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// ==================== Group Chat API Request/Response Types ====================
+
+// ReplyMessageRequest is the request body for POST /api/telegram/reply
+type ReplyMessageRequest struct {
+	ChatID           int64  `json:"chat_id"`
+	Text             string `json:"text"`
+	ReplyToMessageID int64  `json:"reply_to_message_id"`
+}
+
+// GetChatInfoRequest is the request body for POST /api/telegram/chat/info
+type GetChatInfoRequest struct {
+	ChatID int64 `json:"chat_id"`
+}
+
+// GetChatMemberRequest is the request body for POST /api/telegram/chat/member
+type GetChatMemberRequest struct {
+	ChatID int64 `json:"chat_id"`
+	UserID int64 `json:"user_id"`
+}
+
+// PinMessageRequest is the request body for POST /api/telegram/pin
+type PinMessageRequest struct {
+	ChatID              int64 `json:"chat_id"`
+	MessageID           int64 `json:"message_id"`
+	DisableNotification bool  `json:"disable_notification,omitempty"`
+}
+
+// UnpinMessageRequest is the request body for POST /api/telegram/unpin
+type UnpinMessageRequest struct {
+	ChatID    int64 `json:"chat_id"`
+	MessageID int64 `json:"message_id,omitempty"` // If not specified, unpins the most recent pinned message
+}
+
+// EditMessageRequest is the request body for POST /api/telegram/edit
+type EditMessageRequest struct {
+	ChatID    int64  `json:"chat_id"`
+	MessageID int64  `json:"message_id"`
+	Text      string `json:"text"`
 }

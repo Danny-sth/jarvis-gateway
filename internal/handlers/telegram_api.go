@@ -574,3 +574,380 @@ func UpdateMessageRemoveFeedback(cfg *config.Config, chatID int64, messageID int
 
 	return nil
 }
+
+// ============================================================================
+// Group Chat API Functions
+// ============================================================================
+
+// SendMessageWithReply sends a message as a reply to another message
+// Uses Telegram's reply_parameters to quote the original message
+// baseURL is optional - if empty, uses Telegram's official API
+func SendMessageWithReply(cfg *config.Config, chatID int64, text string, replyToMessageID int64, baseURL string) error {
+	botToken := cfg.Telegram.BotToken
+	if botToken == "" {
+		return fmt.Errorf("telegram bot token not configured")
+	}
+
+	// Use provided baseURL or default to Telegram API
+	apiBase := "https://api.telegram.org"
+	if baseURL != "" {
+		apiBase = baseURL
+	}
+	url := fmt.Sprintf("%s/bot%s/sendMessage", apiBase, botToken)
+
+	payload := map[string]interface{}{
+		"chat_id": chatID,
+		"text":    text,
+		"reply_parameters": map[string]interface{}{
+			"message_id": replyToMessageID,
+		},
+	}
+
+	jsonData, _ := json.Marshal(payload)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(jsonData))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("telegram API error: %s", string(body))
+	}
+
+	log.Printf("[telegram] Sent reply message to %d (reply_to=%d)", chatID, replyToMessageID)
+	return nil
+}
+
+// ReplyMessageHandler handles POST /api/telegram/reply
+func ReplyMessageHandler(cfg *config.Config, baseURL string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req ReplyMessageRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if req.ChatID == 0 || req.Text == "" {
+			http.Error(w, "chat_id and text required", http.StatusBadRequest)
+			return
+		}
+
+		err := SendMessageWithReply(cfg, req.ChatID, req.Text, req.ReplyToMessageID, baseURL)
+		if err != nil {
+			log.Printf("[telegram-reply] Failed: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}
+}
+
+// GetChatInfoHandler handles POST /api/telegram/chat/info
+func GetChatInfoHandler(cfg *config.Config, baseURL string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req GetChatInfoRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if req.ChatID == 0 {
+			http.Error(w, "chat_id required", http.StatusBadRequest)
+			return
+		}
+
+		botToken := cfg.Telegram.BotToken
+		if botToken == "" {
+			http.Error(w, "telegram bot token not configured", http.StatusInternalServerError)
+			return
+		}
+
+		apiBase := "https://api.telegram.org"
+		if baseURL != "" {
+			apiBase = baseURL
+		}
+		url := fmt.Sprintf("%s/bot%s/getChat", apiBase, botToken)
+
+		payload := map[string]interface{}{
+			"chat_id": req.ChatID,
+		}
+
+		jsonData, _ := json.Marshal(payload)
+		resp, err := http.Post(url, "application/json", bytes.NewReader(jsonData))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != 200 {
+			http.Error(w, string(body), http.StatusBadGateway)
+			return
+		}
+
+		// Parse Telegram response and extract result
+		var telegramResp struct {
+			OK     bool         `json:"ok"`
+			Result ChatFullInfo `json:"result"`
+		}
+		if err := json.Unmarshal(body, &telegramResp); err != nil {
+			http.Error(w, "failed to parse telegram response", http.StatusInternalServerError)
+			return
+		}
+
+		// Return just the chat info
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(telegramResp.Result)
+	}
+}
+
+// GetChatMemberHandler handles POST /api/telegram/chat/member
+func GetChatMemberHandler(cfg *config.Config, baseURL string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req GetChatMemberRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if req.ChatID == 0 || req.UserID == 0 {
+			http.Error(w, "chat_id and user_id required", http.StatusBadRequest)
+			return
+		}
+
+		botToken := cfg.Telegram.BotToken
+		if botToken == "" {
+			http.Error(w, "telegram bot token not configured", http.StatusInternalServerError)
+			return
+		}
+
+		apiBase := "https://api.telegram.org"
+		if baseURL != "" {
+			apiBase = baseURL
+		}
+		url := fmt.Sprintf("%s/bot%s/getChatMember", apiBase, botToken)
+
+		payload := map[string]interface{}{
+			"chat_id": req.ChatID,
+			"user_id": req.UserID,
+		}
+
+		jsonData, _ := json.Marshal(payload)
+		resp, err := http.Post(url, "application/json", bytes.NewReader(jsonData))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != 200 {
+			http.Error(w, string(body), http.StatusBadGateway)
+			return
+		}
+
+		// Parse Telegram response
+		var telegramResp struct {
+			OK     bool       `json:"ok"`
+			Result ChatMember `json:"result"`
+		}
+		if err := json.Unmarshal(body, &telegramResp); err != nil {
+			http.Error(w, "failed to parse telegram response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(telegramResp.Result)
+	}
+}
+
+// PinMessageHandler handles POST /api/telegram/pin
+func PinMessageHandler(cfg *config.Config, baseURL string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req PinMessageRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if req.ChatID == 0 || req.MessageID == 0 {
+			http.Error(w, "chat_id and message_id required", http.StatusBadRequest)
+			return
+		}
+
+		botToken := cfg.Telegram.BotToken
+		if botToken == "" {
+			http.Error(w, "telegram bot token not configured", http.StatusInternalServerError)
+			return
+		}
+
+		apiBase := "https://api.telegram.org"
+		if baseURL != "" {
+			apiBase = baseURL
+		}
+		url := fmt.Sprintf("%s/bot%s/pinChatMessage", apiBase, botToken)
+
+		payload := map[string]interface{}{
+			"chat_id":              req.ChatID,
+			"message_id":           req.MessageID,
+			"disable_notification": req.DisableNotification,
+		}
+
+		jsonData, _ := json.Marshal(payload)
+		resp, err := http.Post(url, "application/json", bytes.NewReader(jsonData))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			body, _ := io.ReadAll(resp.Body)
+			http.Error(w, string(body), http.StatusBadGateway)
+			return
+		}
+
+		log.Printf("[telegram] Pinned message %d in chat %d", req.MessageID, req.ChatID)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}
+}
+
+// UnpinMessageHandler handles POST /api/telegram/unpin
+func UnpinMessageHandler(cfg *config.Config, baseURL string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req UnpinMessageRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if req.ChatID == 0 {
+			http.Error(w, "chat_id required", http.StatusBadRequest)
+			return
+		}
+
+		botToken := cfg.Telegram.BotToken
+		if botToken == "" {
+			http.Error(w, "telegram bot token not configured", http.StatusInternalServerError)
+			return
+		}
+
+		apiBase := "https://api.telegram.org"
+		if baseURL != "" {
+			apiBase = baseURL
+		}
+		url := fmt.Sprintf("%s/bot%s/unpinChatMessage", apiBase, botToken)
+
+		payload := map[string]interface{}{
+			"chat_id": req.ChatID,
+		}
+		if req.MessageID != 0 {
+			payload["message_id"] = req.MessageID
+		}
+
+		jsonData, _ := json.Marshal(payload)
+		resp, err := http.Post(url, "application/json", bytes.NewReader(jsonData))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			body, _ := io.ReadAll(resp.Body)
+			http.Error(w, string(body), http.StatusBadGateway)
+			return
+		}
+
+		log.Printf("[telegram] Unpinned message in chat %d", req.ChatID)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}
+}
+
+// EditMessageHandler handles POST /api/telegram/edit
+func EditMessageHandler(cfg *config.Config, baseURL string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req EditMessageRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if req.ChatID == 0 || req.MessageID == 0 || req.Text == "" {
+			http.Error(w, "chat_id, message_id and text required", http.StatusBadRequest)
+			return
+		}
+
+		botToken := cfg.Telegram.BotToken
+		if botToken == "" {
+			http.Error(w, "telegram bot token not configured", http.StatusInternalServerError)
+			return
+		}
+
+		apiBase := "https://api.telegram.org"
+		if baseURL != "" {
+			apiBase = baseURL
+		}
+		url := fmt.Sprintf("%s/bot%s/editMessageText", apiBase, botToken)
+
+		payload := map[string]interface{}{
+			"chat_id":    req.ChatID,
+			"message_id": req.MessageID,
+			"text":       req.Text,
+		}
+
+		jsonData, _ := json.Marshal(payload)
+		resp, err := http.Post(url, "application/json", bytes.NewReader(jsonData))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			body, _ := io.ReadAll(resp.Body)
+			http.Error(w, string(body), http.StatusBadGateway)
+			return
+		}
+
+		log.Printf("[telegram] Edited message %d in chat %d", req.MessageID, req.ChatID)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}
+}

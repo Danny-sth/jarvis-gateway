@@ -232,6 +232,14 @@ func main() {
 	mux.HandleFunc("POST /api/telegram/send", handlers.TelegramSend(cfg))
 	mux.HandleFunc("POST /api/telegram/reaction", handlers.TelegramReactionHandler(cfg))
 
+	// Group chat API endpoints (called by Duq MCP tools)
+	mux.HandleFunc("POST /api/telegram/reply", handlers.ReplyMessageHandler(cfg, ""))
+	mux.HandleFunc("POST /api/telegram/chat/info", handlers.GetChatInfoHandler(cfg, ""))
+	mux.HandleFunc("POST /api/telegram/chat/member", handlers.GetChatMemberHandler(cfg, ""))
+	mux.HandleFunc("POST /api/telegram/pin", handlers.PinMessageHandler(cfg, ""))
+	mux.HandleFunc("POST /api/telegram/unpin", handlers.UnpinMessageHandler(cfg, ""))
+	mux.HandleFunc("POST /api/telegram/edit", handlers.EditMessageHandler(cfg, ""))
+
 	// Voice endpoint REMOVED - all requests through Redis queue
 
 	// Google OAuth endpoints
@@ -448,7 +456,13 @@ func main() {
 		"/api/auth/register",       // Public registration API
 		"/api/auth/verify-email",   // Email verification
 		"/api/auth/login",          // Public login API
-		"/api/telegram/reaction",   // Internal: Duq → Gateway reaction calls
+		"/api/telegram/reaction",   // Internal: Duq → Gateway calls
+		"/api/telegram/reply",      // Internal: Duq → Gateway calls
+		"/api/telegram/chat/info",  // Internal: Duq → Gateway calls
+		"/api/telegram/chat/member", // Internal: Duq → Gateway calls
+		"/api/telegram/pin",        // Internal: Duq → Gateway calls
+		"/api/telegram/unpin",      // Internal: Duq → Gateway calls
+		"/api/telegram/edit",       // Internal: Duq → Gateway calls
 	)
 	csrfStore := middleware.NewCSRFStore(24 * time.Hour)
 

@@ -267,6 +267,29 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 			"input_type":      inputType,
 			"source":          "telegram",
 			"is_start":        isStartCommand,
+			// Group chat fields
+			"chat_type":  msg.Chat.Type, // "private", "group", "supergroup", "channel"
+			"chat_title": msg.Chat.Title,
+		}
+
+		// Add sender info (in groups, from_user_id != chat_id)
+		if msg.From != nil {
+			requestMetadata["from_user_id"] = msg.From.ID
+			requestMetadata["from_username"] = msg.From.Username
+		}
+
+		// Add reply info if this message is a reply to another
+		if msg.ReplyToMessage != nil {
+			requestMetadata["reply_to_message_id"] = msg.ReplyToMessage.MessageID
+			requestMetadata["reply_to_message_text"] = msg.ReplyToMessage.Text
+			if msg.ReplyToMessage.From != nil {
+				requestMetadata["reply_to_from_username"] = msg.ReplyToMessage.From.Username
+			}
+		}
+
+		// Add thread ID for forum topics
+		if msg.MessageThreadID != 0 {
+			requestMetadata["message_thread_id"] = msg.MessageThreadID
 		}
 		// Generate trace_id for request tracing
 		traceID := r.Header.Get("X-Trace-Id")
