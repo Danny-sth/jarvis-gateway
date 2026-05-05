@@ -124,11 +124,17 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 			}
 		}
 
-		userID := formatTelegramUserID(msg.Chat.ID)
-		telegramID := msg.Chat.ID
+		// chatID - where to send responses (always Chat.ID)
+		// telegramID - who is the user (From.ID if available, else Chat.ID for anonymous channel posts)
+		chatID := msg.Chat.ID
+		telegramID := chatID
+		if msg.From != nil {
+			telegramID = msg.From.ID
+		}
+		userID := formatTelegramUserID(telegramID)
 
-		log.Printf("[telegram] Message from %s (chat %d): %s",
-			formatUserName(msg.From), msg.Chat.ID, truncateStr(text, 50))
+		log.Printf("[telegram] Message from %s (user %d, chat %d): %s",
+			formatUserName(msg.From), telegramID, chatID, truncateStr(text, 50))
 
 		// Build chat options
 		var opts chatOptions
@@ -263,14 +269,14 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 
 		// Build request metadata
 		requestMetadata := map[string]interface{}{
-			"chat_id":         msg.Chat.ID,
+			"chat_id":         chatID, // Where to send responses
 			"user_message_id": msg.MessageID, // For status reaction on callback
 			"user_email":      userEmail,
 			"is_voice":        isVoice,
 			"input_type":      inputType,
 			"source":          "telegram",
 			"is_start":        isStartCommand,
-			// Group chat fields
+			// Group/channel chat fields
 			"chat_type":  msg.Chat.Type, // "private", "group", "supergroup", "channel"
 			"chat_title": msg.Chat.Title,
 		}
@@ -321,14 +327,14 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 		}
 
 		// Send typing indicator before pushing to queue
-		SendTypingAction(deps.Config, msg.Chat.ID)
+		SendTypingAction(deps.Config, chatID)
 
 		_, err := deps.QueueClient.Push(r.Context(), task)
 		if err != nil {
 			log.Printf("[telegram] Failed to push to Redis queue: %v", err)
-			SendTelegramMessage(deps.Config, msg.Chat.ID, "⚠️ Сервис временно недоступен. Попробуй позже.")
+			SendTelegramMessage(deps.Config, chatID, "⚠️ Сервис временно недоступен. Попробуй позже.")
 			// Set error reaction on user's message
-			SetMessageReaction(deps.Config, msg.Chat.ID, int64(msg.MessageID), ReactionError)
+			SetMessageReaction(deps.Config, chatID, int64(msg.MessageID), ReactionError)
 		} else {
 			log.Printf("[telegram] Message pushed to Redis queue for user %s", userID)
 			// Note: Reactions now set by Duq agent via set_reaction tool
