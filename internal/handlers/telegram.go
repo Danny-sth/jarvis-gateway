@@ -206,6 +206,26 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 			}
 		}
 
+		// Upsert channel for group/channel messages
+		if msg.Chat.Type != "private" && deps.DBClient != nil {
+			_, err := deps.DBClient.UpsertChannel(
+				chatID,
+				msg.Chat.Type,
+				msg.Chat.Title,
+				msg.Chat.Username,
+			)
+			if err != nil {
+				log.Printf("[telegram] Failed to upsert channel: %v", err)
+			}
+
+			// Track membership if we know the user
+			if msg.From != nil && dbUserID > 0 {
+				if err := deps.DBClient.UpdateChannelMembership(dbUserID, chatID, true); err != nil {
+					log.Printf("[telegram] Failed to update membership: %v", err)
+				}
+			}
+		}
+
 		// Get GWS credentials if available
 		var userEmail string
 		if deps.CredService != nil {
