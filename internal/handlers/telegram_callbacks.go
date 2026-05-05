@@ -36,6 +36,10 @@ func handleCallbackQuery(w http.ResponseWriter, callback *TelegramCallbackQuery,
 		handleMenuHelp(w, chatID, deps)
 	case "menu_back":
 		handleMenuBack(w, chatID, deps)
+	case "feedback_positive":
+		handleFeedback(w, chatID, callback, deps, "positive")
+	case "feedback_negative":
+		handleFeedback(w, chatID, callback, deps, "negative")
 	default:
 		log.Printf("[telegram] Unknown callback data: %s", data)
 		w.WriteHeader(http.StatusOK)
@@ -231,4 +235,53 @@ func handleToolsCommand(w http.ResponseWriter, chatID int64, deps *TelegramDeps)
 
 	SendTelegramMessage(deps.Config, chatID, sb.String())
 	w.WriteHeader(http.StatusOK)
+}
+
+// handleFeedback handles feedback button clicks (👍/👎)
+func handleFeedback(w http.ResponseWriter, chatID int64, callback *TelegramCallbackQuery, deps *TelegramDeps, feedbackType string) {
+	// Get original message text to preserve it
+	originalText := ""
+	if callback.Message != nil {
+		originalText = callback.Message.Text
+	}
+
+	// Get message ID
+	var messageID int64
+	if callback.Message != nil {
+		messageID = int64(callback.Message.MessageID)
+	}
+
+	// Store feedback in database if service available
+	if deps.FeedbackService != nil {
+		err := deps.FeedbackService.SaveData(
+			chatID,                                      // userID
+			"",                                          // keycloakSub (can be added later if needed)
+			messageID,                                   // messageID
+			"",                                          // conversationID (can be added later)
+			feedbackType,                                // feedbackType
+			truncateFeedbackPreview(originalText, 200),  // responsePreview
+		)
+		if err != nil {
+			log.Printf("[telegram] Failed to save feedback: %v", err)
+		} else {
+			log.Printf("[telegram] Saved feedback: user=%d msg=%d type=%s", chatID, messageID, feedbackType)
+		}
+	}
+
+	// Edit message to remove buttons and show thank you
+	if messageID > 0 {
+		if err := UpdateMessageRemoveFeedback(deps.Config, chatID, messageID, originalText, feedbackType); err != nil {
+			log.Printf("[telegram] Failed to update message after feedback: %v", err)
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// truncateFeedbackPreview truncates response preview for storage
+func truncateFeedbackPreview(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen]
 }

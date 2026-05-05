@@ -170,6 +170,7 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 		isStart := false
 		source := "telegram" // Default source
 		keycloakSub := ""    // For WebSocket routing (Android uses keycloak_sub)
+		var userMessageID int64
 		if payload.RequestMetadata != nil {
 			if v, ok := payload.RequestMetadata["is_voice"].(bool); ok {
 				isVoice = v
@@ -182,6 +183,10 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 			}
 			if st, ok := payload.RequestMetadata["is_start"].(bool); ok {
 				isStart = st
+			}
+			// Extract user's message ID for status reaction
+			if umid, ok := payload.RequestMetadata["user_message_id"].(float64); ok {
+				userMessageID = int64(umid)
 			}
 		}
 
@@ -205,6 +210,7 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 				IsVoice:           isVoice,
 				TaskID:            payload.TaskID, // For task correlation
 				Source:            source,         // For channel routing
+				UserMessageID:     userMessageID,  // For status reaction on delivery
 				VoiceData:         voiceData,
 				VoiceFormat:       voiceFormat,
 				Waveform:          waveform,
@@ -229,17 +235,31 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 			case err := <-done:
 				if err != nil {
 					log.Printf("[callback] Channel routing failed for task %s: %v", payload.TaskID, err)
-				} else if isStart && source == "telegram" {
-					// After successful /start response, send persistent reply keyboard
-					menuText := "👇 Используй кнопки меню внизу или просто напиши сообщение:"
-					if err := SendTelegramMessageWithReplyKeyboard(deps.Config, chatID, menuText, getReplyKeyboard()); err != nil {
-						log.Printf("[callback] Failed to send menu after /start: %v", err)
-					} else {
-						log.Printf("[callback] Sent reply keyboard after /start to %d", chatID)
+					// Set error reaction on user's message
+					if source == "telegram" && userMessageID > 0 {
+						SetMessageReaction(deps.Config, chatID, userMessageID, ReactionError)
+					}
+				} else {
+					// Set success reaction on user's message (✅)
+					if source == "telegram" && userMessageID > 0 {
+						SetMessageReaction(deps.Config, chatID, userMessageID, ReactionDone)
+					}
+					if isStart && source == "telegram" {
+						// After successful /start response, send persistent reply keyboard
+						menuText := "👇 Используй кнопки меню внизу или просто напиши сообщение:"
+						if err := SendTelegramMessageWithReplyKeyboard(deps.Config, chatID, menuText, getReplyKeyboard()); err != nil {
+							log.Printf("[callback] Failed to send menu after /start: %v", err)
+						} else {
+							log.Printf("[callback] Sent reply keyboard after /start to %d", chatID)
+						}
 					}
 				}
 			case <-ctx.Done():
 				log.Printf("[callback] Channel delivery timeout for task %s (channel=%s)", payload.TaskID, outputChannel)
+				// Set error reaction on timeout
+				if source == "telegram" && userMessageID > 0 {
+					SetMessageReaction(deps.Config, chatID, userMessageID, ReactionError)
+				}
 			}
 		}()
 

@@ -19,6 +19,7 @@ import (
 	"duq-gateway/internal/config"
 	"duq-gateway/internal/credentials"
 	"duq-gateway/internal/db"
+	"duq-gateway/internal/feedback"
 	"duq-gateway/internal/handlers"
 	"duq-gateway/internal/keycloak"
 	"duq-gateway/internal/middleware"
@@ -153,6 +154,14 @@ func main() {
 	registrationService := registration.NewService(cfg, dbClient, keycloakAdmin)
 	log.Printf("[registration] Unified registration service initialized")
 
+	// Create feedback service for user feedback on bot responses
+	feedbackService := feedback.NewService(dbClient.DB())
+	if err := feedbackService.EnsureTable(); err != nil {
+		log.Printf("[feedback] WARNING: Failed to create feedback table: %v", err)
+		// Non-fatal - feedback won't work but app still functions
+	}
+	log.Printf("[feedback] Feedback service initialized")
+
 	// Create Telegram handler with full dependencies
 	telegramDeps := &handlers.TelegramDeps{
 		Config:              cfg,
@@ -162,6 +171,7 @@ func main() {
 		ChannelRouter:       channelRouter,
 		DBClient:            dbClient,
 		RegistrationService: registrationService,
+		FeedbackService:     feedbackService,
 	}
 
 	// Google OAuth dependencies

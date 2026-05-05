@@ -61,7 +61,8 @@ func (c *TelegramChannel) Send(ctx *ResponseContext) error {
 	if shouldVoice && ctx.VoicePriority != "skip" {
 		return c.sendVoiceResponse(ctx)
 	}
-	return c.sendTextMessage(ctx.ChatID, ctx.Response)
+	// Send text with feedback buttons (👍👎)
+	return c.sendTextMessageWithFeedback(ctx.ChatID, ctx.Response)
 }
 
 func (c *TelegramChannel) sendVoiceResponse(ctx *ResponseContext) error {
@@ -189,6 +190,42 @@ func (c *TelegramChannel) sendTextMessage(chatID int64, text string) error {
 	}
 
 	log.Printf("[telegram] Sent text message to %d", chatID)
+	return nil
+}
+
+// sendTextMessageWithFeedback sends a message with inline feedback buttons (👍👎)
+func (c *TelegramChannel) sendTextMessageWithFeedback(chatID int64, text string) error {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", c.config.BotToken)
+
+	// Inline keyboard with feedback buttons
+	keyboard := map[string]interface{}{
+		"inline_keyboard": [][]map[string]string{
+			{
+				{"text": "👍", "callback_data": "feedback_positive"},
+				{"text": "👎", "callback_data": "feedback_negative"},
+			},
+		},
+	}
+
+	payload := map[string]interface{}{
+		"chat_id":      chatID,
+		"text":         text,
+		"reply_markup": keyboard,
+	}
+
+	jsonData, _ := json.Marshal(payload)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(jsonData))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("telegram API error: %s", string(body))
+	}
+
+	log.Printf("[telegram] Sent text message with feedback buttons to %d", chatID)
 	return nil
 }
 

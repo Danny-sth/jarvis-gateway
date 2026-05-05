@@ -260,12 +260,13 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 
 		// Build request metadata
 		requestMetadata := map[string]interface{}{
-			"chat_id":    msg.Chat.ID,
-			"user_email": userEmail,
-			"is_voice":   isVoice,
-			"input_type": inputType,
-			"source":     "telegram",
-			"is_start":   isStartCommand,
+			"chat_id":         msg.Chat.ID,
+			"user_message_id": msg.MessageID, // For status reaction on callback
+			"user_email":      userEmail,
+			"is_voice":        isVoice,
+			"input_type":      inputType,
+			"source":          "telegram",
+			"is_start":        isStartCommand,
 		}
 		// Generate trace_id for request tracing
 		traceID := r.Header.Get("X-Trace-Id")
@@ -300,8 +301,12 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 		if err != nil {
 			log.Printf("[telegram] Failed to push to Redis queue: %v", err)
 			SendTelegramMessage(deps.Config, msg.Chat.ID, "⚠️ Сервис временно недоступен. Попробуй позже.")
+			// Set error reaction on user's message
+			SetMessageReaction(deps.Config, msg.Chat.ID, int64(msg.MessageID), ReactionError)
 		} else {
 			log.Printf("[telegram] Message pushed to Redis queue for user %s", userID)
+			// Set queued reaction on user's message (⏳)
+			SetMessageReaction(deps.Config, msg.Chat.ID, int64(msg.MessageID), ReactionQueued)
 		}
 
 		w.WriteHeader(http.StatusOK)

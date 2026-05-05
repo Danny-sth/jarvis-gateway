@@ -40,13 +40,14 @@ type PendingMessage struct {
 
 // ResponseContext contains all info needed to route a response
 type ResponseContext struct {
-	ChatID    int64
-	UserID    string // Keycloak sub or telegram_id
-	UserEmail string
-	Response  string
-	IsVoice   bool
-	TaskID    string // Task ID for correlation
-	Source    string // Request source: "telegram", "android", "mcp"
+	ChatID        int64
+	UserID        string // Keycloak sub or telegram_id
+	UserEmail     string
+	Response      string
+	IsVoice       bool
+	TaskID        string // Task ID for correlation
+	Source        string // Request source: "telegram", "android", "mcp"
+	UserMessageID int64  // Original user's message ID (for status reactions)
 
 	// Voice-aware fields (from Duq response)
 	OutputType      string    // "text", "voice", or "both"
