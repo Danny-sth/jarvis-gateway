@@ -240,10 +240,7 @@ func DuqCallback(deps *CallbackDeps) http.HandlerFunc {
 						SetMessageReaction(deps.Config, chatID, userMessageID, ReactionError)
 					}
 				} else {
-					// Set success reaction on user's message (✅)
-					if source == "telegram" && userMessageID > 0 {
-						SetMessageReaction(deps.Config, chatID, userMessageID, ReactionDone)
-					}
+					// Note: Success reactions now set by Duq agent via set_reaction tool
 					if isStart && source == "telegram" {
 						// After successful /start response, send persistent reply keyboard
 						menuText := "👇 Используй кнопки меню внизу или просто напиши сообщение:"

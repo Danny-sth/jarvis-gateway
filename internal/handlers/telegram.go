@@ -305,8 +305,7 @@ func TelegramWithDeps(deps *TelegramDeps) http.HandlerFunc {
 			SetMessageReaction(deps.Config, msg.Chat.ID, int64(msg.MessageID), ReactionError)
 		} else {
 			log.Printf("[telegram] Message pushed to Redis queue for user %s", userID)
-			// Set queued reaction on user's message (⏳)
-			SetMessageReaction(deps.Config, msg.Chat.ID, int64(msg.MessageID), ReactionQueued)
+			// Note: Reactions now set by Duq agent via set_reaction tool
 		}
 
 		w.WriteHeader(http.StatusOK)
