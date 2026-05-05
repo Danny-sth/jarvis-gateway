@@ -339,15 +339,15 @@ func DeleteBotCommands(cfg *config.Config) error {
 // ============================================================================
 
 // ReactionEmoji represents status reactions for message processing
+// NOTE: Telegram only supports a specific set of emoji for reactions
+// Supported: 👍 👎 ❤️ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 🤩 🤮 💩 🙏 👌 🕊 🤡 🥱 🥴 😍 🐳 ❤️‍🔥 🌚 🌭 💯 🤣 ⚡️ 🍌 🏆 💔 🤨 😐 🍓 🍾 💋 🖕 😈 😴 😭 🤓 👻 👨‍💻 👀 🎃 🙈 😇 😨 🤝 ✍️ 🤗 🫡 🎅 🎄 ☃️ 💅 🤪 🗿 🆒 💘 🙉 🦄 😘 💊 🙊 😎 👾 🤷‍♂️ 🤷 🤷‍♀️ 😡
 type ReactionEmoji string
 
 const (
-	ReactionQueued   ReactionEmoji = "⏳" // Message received, queued
+	ReactionQueued   ReactionEmoji = "👀" // Message received, queued (eyes = "seen")
 	ReactionThinking ReactionEmoji = "🤔" // Processing started
-	ReactionDone     ReactionEmoji = "✅" // Success
-	ReactionError    ReactionEmoji = "❌" // Error occurred
-	ReactionLike     ReactionEmoji = "👍" // Positive feedback
-	ReactionDislike  ReactionEmoji = "👎" // Negative feedback
+	ReactionDone     ReactionEmoji = "👍" // Success
+	ReactionError    ReactionEmoji = "💔" // Error occurred
 )
 
 // SetMessageReaction sets a reaction on a message (fire-and-forget)

@@ -61,8 +61,7 @@ func (c *TelegramChannel) Send(ctx *ResponseContext) error {
 	if shouldVoice && ctx.VoicePriority != "skip" {
 		return c.sendVoiceResponse(ctx)
 	}
-	// Send text with feedback buttons (👍👎)
-	return c.sendTextMessageWithFeedback(ctx.ChatID, ctx.Response)
+	return c.sendTextMessage(ctx.ChatID, ctx.Response)
 }
 
 func (c *TelegramChannel) sendVoiceResponse(ctx *ResponseContext) error {
