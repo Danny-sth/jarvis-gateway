@@ -214,7 +214,7 @@ func main() {
 	gmailDeps := &handlers.GmailDeps{Config: cfg, QueueClient: queueClient}
 	githubDeps := &handlers.GitHubDeps{Config: cfg, QueueClient: queueClient}
 	customDeps := &handlers.CustomDeps{Config: cfg, QueueClient: queueClient}
-	mcpDeps := &handlers.MCPDeps{Config: cfg, DBClient: dbClient, QueueClient: queueClient, CredService: credService}
+	mcpDeps := &handlers.MCPDeps{Config: cfg, DBClient: dbClient, QueueClient: queueClient, CredService: credService, RBACService: rbacService}
 
 	mux.HandleFunc("POST /api/calendar", middleware.RateLimitFunc(webhookLimiter, handlers.Calendar(calendarDeps)))
 	mux.HandleFunc("POST /api/gmail", middleware.RateLimitFunc(webhookLimiter, handlers.Gmail(gmailDeps)))

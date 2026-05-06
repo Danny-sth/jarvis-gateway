@@ -31,6 +31,7 @@ type MCPDeps struct {
 	DBClient    *db.Client
 	QueueClient *queue.Client
 	CredService CredentialServiceInterface
+	RBACService RBACServiceInterface
 }
 
 // MCP creates a synchronous MCP handler
@@ -87,6 +88,19 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 			}
 		}
 
+		// Allowed tools from RBAC using internal user ID
+		var allowedTools []string
+		if deps.RBACService != nil && dbUserID > 0 {
+			// Ensure user has default role
+			deps.RBACService.EnsureUserRole(dbUserID)
+
+			tools, err := deps.RBACService.GetAllowedTools(dbUserID)
+			if err == nil {
+				allowedTools = tools
+				log.Printf("[mcp] User %d allowed tools: %d", dbUserID, len(allowedTools))
+			}
+		}
+
 		// Build task - reusing same structure as Telegram handler
 		callbackURL := fmt.Sprintf("http://%s/api/duq/callback", deps.Config.GatewayHost)
 
@@ -97,7 +111,8 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 			CallbackURL: callbackURL,
 			Payload: map[string]interface{}{
 				"message":        message,
-				"output_channel": "mcp", // Different channel for logging
+				"output_channel": "mcp",           // Different channel for logging
+				"allowed_tools":  allowedTools,    // RBAC-filtered tools
 			},
 			RequestMetadata: map[string]interface{}{
 				"source":      "mcp",
