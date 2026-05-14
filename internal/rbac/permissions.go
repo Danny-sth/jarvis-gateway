@@ -2,7 +2,49 @@ package rbac
 
 // PermissionToTools maps permission names to MCP tool names
 var PermissionToTools = map[string][]string{
-	// Core tools
+	// Core tools (always available)
+	"tool:core": {
+		"get_time", "system_info", "weather",
+	},
+
+	// Delegation (A2A multi-agent orchestration)
+	"tool:delegate": {"delegate"},
+
+	// Task management
+	"tool:tasks": {
+		"task_create", "task_list", "task_get", "task_run",
+		"task_schedule", "task_cancel", "task_preview_cron", "task_actions_list",
+		"scheduled_tasks_list", "scheduled_task_cancel",
+	},
+
+	// Reflection & Learning
+	"tool:reflection": {
+		"reflection_search_learnings", "reflection_store_learning", "reflection_trigger",
+	},
+
+	// Advanced (subtasks, templates)
+	"tool:advanced": {
+		"subtask_spawn", "subtask_spawn_parallel", "subtask_list", "subtask_results",
+		"template_list", "template_get", "template_create_workflow",
+	},
+
+	// Output channel selection
+	"tool:output": {
+		"select_output_channel", "set_response_mode",
+	},
+
+	// Telegram interaction
+	"tool:telegram": {
+		"set_reaction", "reply_message", "edit_message", "send_message",
+		"get_chat_info", "get_chat_member", "pin_message", "unpin_message",
+	},
+
+	// Group chat behavior
+	"tool:group_chat": {
+		"decide_response", "query_channel_memory", "query_membership", "configure_channel",
+	},
+
+	// Legacy mappings (keep for backwards compatibility)
 	"tool:weather":       {"weather"},
 	"tool:cortex_search": {"cortex_search"},
 	"tool:cortex_store":  {"cortex_store"},
