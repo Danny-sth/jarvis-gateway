@@ -74,9 +74,6 @@ func UnifiedAuth(dbClient *db.Client, next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// Future: Add support for telegram web sessions or other auth methods here
-		// if strings.HasPrefix(token, "tg_") { ... }
-
 		http.Error(w, "Unauthorized: unknown token type", http.StatusUnauthorized)
 	}
 }
