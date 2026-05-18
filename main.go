@@ -51,9 +51,6 @@ func main() {
 
 	// Background goroutine for session cleanup (configurable interval)
 	sessionCleanupInterval := time.Duration(cfg.Timeouts.SessionCleanupMin) * time.Minute
-	if sessionCleanupInterval == 0 {
-		sessionCleanupInterval = 60 * time.Minute // fallback default (1 hour)
-	}
 	go func() {
 		ticker := time.NewTicker(sessionCleanupInterval)
 		defer ticker.Stop()
@@ -267,7 +264,6 @@ func main() {
 
 	// User Management endpoints (Keycloak SSO)
 	mux.HandleFunc("GET /api/users", middleware.KeycloakAuth(cfg, dbClient, handlers.ListUsers(dbClient)))
-	mux.HandleFunc("POST /api/users", middleware.KeycloakAuth(cfg, dbClient, handlers.CreateUser(dbClient)))
 	mux.HandleFunc("PUT /api/users/{id}", middleware.KeycloakAuth(cfg, dbClient, handlers.UpdateUser(dbClient)))
 	mux.HandleFunc("DELETE /api/users/{id}", middleware.KeycloakAuth(cfg, dbClient, handlers.DeleteUser(dbClient)))
 

@@ -52,11 +52,8 @@ func QRGenerate(cfg *config.Config, dbClient *db.Client) http.HandlerFunc {
 			return
 		}
 
-		// Generate QR code with configured TTL
+		// Generate QR code with configured TTL (REQUIRED config)
 		qrTTL := time.Duration(cfg.Timeouts.QRCodeTTLMin) * time.Minute
-		if qrTTL == 0 {
-			qrTTL = 5 * time.Minute // fallback default
-		}
 		qr, err := dbClient.GenerateQRCode(req.TelegramID, req.DeviceName, qrTTL)
 		if err != nil {
 			log.Printf("[auth] Failed to generate QR code: %v", err)

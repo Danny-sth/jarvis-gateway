@@ -107,10 +107,6 @@ func GetMessages(deps *HistoryDeps) http.HandlerFunc {
 
 		conversationID := r.PathValue("conversation_id")
 		if conversationID == "" {
-			// Try legacy parameter name
-			conversationID = r.PathValue("session_id")
-		}
-		if conversationID == "" {
 			http.Error(w, `{"error":"conversation_id required"}`, http.StatusBadRequest)
 			return
 		}

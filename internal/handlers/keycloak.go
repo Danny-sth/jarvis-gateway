@@ -21,22 +21,15 @@ var keycloakHTTPClient *http.Client
 // InitKeycloakClient initializes the Keycloak HTTP client with configured timeout
 func InitKeycloakClient(cfg *config.Config) {
 	timeout := time.Duration(cfg.Timeouts.KeycloakTimeout) * time.Second
-	if timeout == 0 {
-		timeout = 10 * time.Second // fallback default
-	}
 	keycloakHTTPClient = &http.Client{
 		Timeout: timeout,
 	}
 }
 
 // getKeycloakClient returns the shared Keycloak HTTP client
-// Falls back to default if not initialized
+// MUST be called after InitKeycloakClient
 func getKeycloakClient() *http.Client {
-	if keycloakHTTPClient != nil {
-		return keycloakHTTPClient
-	}
-	// Fallback if not initialized (shouldn't happen in production)
-	return &http.Client{Timeout: 10 * time.Second}
+	return keycloakHTTPClient
 }
 
 // KeycloakTokenResponse represents the token response from Keycloak

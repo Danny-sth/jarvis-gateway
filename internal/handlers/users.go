@@ -104,18 +104,6 @@ func ListUsers(dbClient *db.Client) http.HandlerFunc {
 	}
 }
 
-// POST /api/users
-// DEPRECATED: This endpoint creates users without Keycloak integration.
-// Users should be created via Telegram /start (Keycloak-first flow) or Keycloak Admin API.
-func CreateUser(dbClient *db.Client) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// This endpoint is deprecated - users must be created through Keycloak
-		// Keycloak is the primary source of truth for user identity
-		log.Printf("[users] DEPRECATED: CreateUser endpoint called - returning error")
-		http.Error(w, "Deprecated: Users must be created via Keycloak. Use Telegram /start or Keycloak Admin API.", http.StatusGone)
-	}
-}
-
 // PUT /api/users/{id}
 func UpdateUser(dbClient *db.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

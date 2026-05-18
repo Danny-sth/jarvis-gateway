@@ -78,18 +78,12 @@ var (
 )
 
 // getJWKSCache returns the singleton JWKS cache
-// jwksTTLMin: JWKS cache TTL in minutes (default 10 if 0)
-// keycloakTimeoutSec: HTTP timeout for Keycloak in seconds (default 10 if 0)
+// jwksTTLMin: JWKS cache TTL in minutes (REQUIRED)
+// keycloakTimeoutSec: HTTP timeout for Keycloak in seconds (REQUIRED)
 func getJWKSCache(keycloakURL, realm string, jwksTTLMin int, keycloakTimeoutSec int) *JWKSCache {
 	jwksCacheOnce.Do(func() {
 		ttl := time.Duration(jwksTTLMin) * time.Minute
-		if ttl == 0 {
-			ttl = 10 * time.Minute // fallback default
-		}
 		timeout := time.Duration(keycloakTimeoutSec) * time.Second
-		if timeout == 0 {
-			timeout = 10 * time.Second // fallback default
-		}
 		jwksCache = &JWKSCache{
 			keys:            make(map[string]interface{}),
 			cacheTTL:        ttl,
@@ -528,20 +522,3 @@ func KeycloakServiceAuth(cfg *config.Config, allowedClients []string, next http.
 	}
 }
 
-// KeycloakOrJWT middleware tries Keycloak first, then falls back to legacy JWT
-func KeycloakOrJWT(cfg *config.Config, dbClient *db.Client, next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-
-		// If Keycloak is enabled and token is not a mobile token, use Keycloak auth
-		if cfg.Keycloak.Enabled && !strings.HasPrefix(tokenString, "mob_") {
-			// Try to validate as Keycloak token
-			KeycloakAuth(cfg, dbClient, next)(w, r)
-			return
-		}
-
-		// Fall back to legacy JWT auth
-		JWTAuth(cfg, dbClient, next)(w, r)
-	}
-}

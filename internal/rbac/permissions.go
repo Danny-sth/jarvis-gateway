@@ -44,12 +44,6 @@ var PermissionToTools = map[string][]string{
 		"decide_response", "query_channel_memory", "query_membership", "configure_channel",
 	},
 
-	// Legacy mappings (keep for backwards compatibility)
-	"tool:weather":       {"weather"},
-	"tool:cortex_search": {"cortex_search"},
-	"tool:cortex_store":  {"cortex_store"},
-	"tool:system_info":   {"system_info"},
-
 	// Obsidian (connect - allows users to connect their vault)
 	"tool:obsidian:connect": {"connect_obsidian"},
 	// Obsidian (read group)

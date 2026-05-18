@@ -28,12 +28,9 @@ type cacheItem struct {
 }
 
 // NewService creates a new RBAC service
-// cacheTTLMin: cache TTL in minutes (default 5 if 0)
+// cacheTTLMin: cache TTL in minutes (REQUIRED, 0 disables caching)
 func NewService(db *sql.DB, cacheTTLMin int) *Service {
 	ttl := time.Duration(cacheTTLMin) * time.Minute
-	if ttl == 0 {
-		ttl = 5 * time.Minute // fallback default
-	}
 	return &Service{
 		db: db,
 		cache: &cache{

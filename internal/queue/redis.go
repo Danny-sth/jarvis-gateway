@@ -39,7 +39,7 @@ type Client struct {
 }
 
 // NewClient creates new Redis queue client
-// redisTimeoutSec is the timeout for Redis operations in seconds (default: 5)
+// redisTimeoutSec is the timeout for Redis operations in seconds (REQUIRED)
 func NewClient(redisURL string, redisTimeoutSec int) (*Client, error) {
 	opt, err := redis.ParseURL(redisURL)
 	if err != nil {
@@ -48,12 +48,8 @@ func NewClient(redisURL string, redisTimeoutSec int) (*Client, error) {
 
 	rdb := redis.NewClient(opt)
 
-	// Use configured timeout or fallback to 5 seconds
+	// Use configured timeout (REQUIRED)
 	timeout := time.Duration(redisTimeoutSec) * time.Second
-	if timeout == 0 {
-		timeout = 5 * time.Second
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 

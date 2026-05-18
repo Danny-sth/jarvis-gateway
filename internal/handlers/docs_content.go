@@ -31,10 +31,12 @@ func DocsContent(cfg *config.Config) http.HandlerFunc {
 			docName += ".md"
 		}
 
-		// Build full path using configured docs path
+		// Build full path using configured docs path (REQUIRED config)
 		docsPath := cfg.DocsPath
 		if docsPath == "" {
-			docsPath = "/opt/obsidian-vault/Coding/duq" // fallback for backwards compatibility
+			log.Printf("[docs-content] DocsPath not configured")
+			http.Error(w, "Documentation not available", http.StatusServiceUnavailable)
+			return
 		}
 		fullPath := filepath.Join(docsPath, docName)
 
