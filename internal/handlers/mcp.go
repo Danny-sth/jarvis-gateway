@@ -17,6 +17,7 @@ import (
 type MCPRequest struct {
 	Request string `json:"request"`
 	Context string `json:"context,omitempty"`
+	UserSub string `json:"user_sub,omitempty"` // Keycloak user UUID for identity
 }
 
 // MCPResponse is the response body for MCP endpoint
@@ -50,7 +51,7 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 			return
 		}
 
-		log.Printf("[mcp] Request: %s", truncateStr(req.Request, 100))
+		log.Printf("[mcp] Request: %s, user_sub: %s", truncateStr(req.Request, 100), truncateStr(req.UserSub, 36))
 
 		// Build message with context
 		message := req.Request
@@ -58,33 +59,55 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 			message = fmt.Sprintf("%s\n\nContext: %s", req.Request, req.Context)
 		}
 
-		// Use owner's user ID for MCP requests
-		userID := deps.Config.TelegramChatID
-
-		// Parse telegram_id for credentials lookup
+		// Get user identity from request body (keycloak_sub) or fallback to config
+		var userID string
 		var telegramID int64
-		fmt.Sscanf(userID, "%d", &telegramID)
-
-		// Get db_user_id and keycloak_sub for memory/history operations
 		var dbUserID int64
 		var keycloakSub string
-		if deps.DBClient != nil {
-			user, err := deps.DBClient.GetUserByTelegramID(telegramID)
+
+		if req.UserSub != "" && deps.DBClient != nil {
+			// Primary path: use keycloak_sub from request body
+			user, err := deps.DBClient.GetUserByKeycloakSub(req.UserSub)
 			if err != nil {
-				log.Printf("[mcp] Error getting user: %v", err)
+				log.Printf("[mcp] Error getting user by keycloak_sub: %v", err)
 			}
 			if user != nil {
 				dbUserID = user.ID
 				keycloakSub = user.KeycloakSub
+				if user.TelegramID != nil {
+					telegramID = *user.TelegramID
+					userID = fmt.Sprintf("%d", telegramID) // For Redis key compatibility
+				}
+				log.Printf("[mcp] User found by keycloak_sub: db_id=%d, telegram_id=%d", dbUserID, telegramID)
+			} else {
+				log.Printf("[mcp] WARNING: user_sub %s not found in database", req.UserSub)
+			}
+		}
+
+		// Fallback: use TelegramChatID from config (legacy behavior)
+		if dbUserID == 0 && deps.Config.TelegramChatID != "" {
+			log.Printf("[mcp] WARNING: Falling back to TelegramChatID from config")
+			userID = deps.Config.TelegramChatID
+			fmt.Sscanf(userID, "%d", &telegramID)
+
+			if deps.DBClient != nil {
+				user, err := deps.DBClient.GetUserByTelegramID(telegramID)
+				if err != nil {
+					log.Printf("[mcp] Error getting user by telegram_id: %v", err)
+				}
+				if user != nil {
+					dbUserID = user.ID
+					keycloakSub = user.KeycloakSub
+				}
 			}
 		}
 
 		// Get user email from credentials (for email channel)
 		var userEmail string
-		if deps.CredService != nil {
-			if creds, err := deps.CredService.GetCredentialsByTelegramID(telegramID, "google"); err == nil && creds != nil {
+		if deps.CredService != nil && dbUserID > 0 {
+			if creds, err := deps.CredService.GetCredentials(dbUserID, "google"); err == nil && creds != nil {
 				userEmail = creds.Email
-				log.Printf("[mcp] User %d has email: %s", telegramID, userEmail)
+				log.Printf("[mcp] User %d has email: %s", dbUserID, userEmail)
 			}
 		}
 
