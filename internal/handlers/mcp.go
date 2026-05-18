@@ -53,54 +53,52 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 
 		log.Printf("[mcp] Request: %s, user_sub: %s", truncateStr(req.Request, 100), truncateStr(req.UserSub, 36))
 
+		// user_sub is REQUIRED - no silent fallback
+		if req.UserSub == "" {
+			log.Printf("[mcp] ERROR: user_sub is required")
+			http.Error(w, `{"error":"user_sub is required"}`, http.StatusBadRequest)
+			return
+		}
+
 		// Build message with context
 		message := req.Request
 		if req.Context != "" {
 			message = fmt.Sprintf("%s\n\nContext: %s", req.Request, req.Context)
 		}
 
-		// Get user identity from request body (keycloak_sub) or fallback to config
+		// Get user by keycloak_sub
 		var userID string
 		var telegramID int64
 		var dbUserID int64
 		var keycloakSub string
 
-		if req.UserSub != "" && deps.DBClient != nil {
-			// Primary path: use keycloak_sub from request body
-			user, err := deps.DBClient.GetUserByKeycloakSub(req.UserSub)
-			if err != nil {
-				log.Printf("[mcp] Error getting user by keycloak_sub: %v", err)
-			}
-			if user != nil {
-				dbUserID = user.ID
-				keycloakSub = user.KeycloakSub
-				if user.TelegramID != nil {
-					telegramID = *user.TelegramID
-					userID = fmt.Sprintf("%d", telegramID) // For Redis key compatibility
-				}
-				log.Printf("[mcp] User found by keycloak_sub: db_id=%d, telegram_id=%d", dbUserID, telegramID)
-			} else {
-				log.Printf("[mcp] WARNING: user_sub %s not found in database", req.UserSub)
-			}
+		if deps.DBClient == nil {
+			log.Printf("[mcp] ERROR: DBClient is nil")
+			http.Error(w, `{"error":"database unavailable"}`, http.StatusInternalServerError)
+			return
 		}
 
-		// Fallback: use TelegramChatID from config (legacy behavior)
-		if dbUserID == 0 && deps.Config.TelegramChatID != "" {
-			log.Printf("[mcp] WARNING: Falling back to TelegramChatID from config")
-			userID = deps.Config.TelegramChatID
-			fmt.Sscanf(userID, "%d", &telegramID)
-
-			if deps.DBClient != nil {
-				user, err := deps.DBClient.GetUserByTelegramID(telegramID)
-				if err != nil {
-					log.Printf("[mcp] Error getting user by telegram_id: %v", err)
-				}
-				if user != nil {
-					dbUserID = user.ID
-					keycloakSub = user.KeycloakSub
-				}
-			}
+		user, err := deps.DBClient.GetUserByKeycloakSub(req.UserSub)
+		if err != nil {
+			log.Printf("[mcp] Error getting user by keycloak_sub: %v", err)
+			http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+			return
 		}
+		if user == nil {
+			log.Printf("[mcp] ERROR: user_sub %s not found in database", req.UserSub)
+			http.Error(w, `{"error":"user not found"}`, http.StatusNotFound)
+			return
+		}
+
+		dbUserID = user.ID
+		keycloakSub = user.KeycloakSub
+		if user.TelegramID != nil {
+			telegramID = *user.TelegramID
+			userID = fmt.Sprintf("%d", telegramID)
+		} else {
+			userID = req.UserSub // Use keycloak_sub as fallback for Redis key
+		}
+		log.Printf("[mcp] User: db_id=%d, telegram_id=%d, keycloak_sub=%s", dbUserID, telegramID, keycloakSub)
 
 		// Get user email from credentials (for email channel)
 		var userEmail string
@@ -138,11 +136,11 @@ func MCP(deps *MCPDeps) http.HandlerFunc {
 				"allowed_tools":  allowedTools,    // RBAC-filtered tools
 			},
 			RequestMetadata: map[string]interface{}{
-				"source":      "mcp",
-				"chat_id":     telegramID,  // For fallback to Telegram
-				"db_user_id":  dbUserID,    // For memory operations
-				"keycloak_sub": keycloakSub,  // For conversation history
-				"user_email":   userEmail,    // For email channel
+				"source":       "mcp",
+				"chat_id":      telegramID,
+				"db_user_id":   dbUserID,
+				"keycloak_sub": keycloakSub,
+				"user_email":   userEmail,
 			},
 		}
 
