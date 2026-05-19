@@ -221,7 +221,7 @@ func main() {
 	// MCP endpoint - synchronous, waits for response (used by Claude Code)
 	// Protected by Keycloak service account auth (client_credentials flow)
 	// Empty list = any valid token from our Keycloak realm is accepted
-	mcpAllowedClients := []string{} // TODO: add "duq-mcp" when service account created
+	mcpAllowedClients := []string{"duq-mcp"}
 	mux.HandleFunc("POST /api/mcp", middleware.KeycloakServiceAuth(cfg, mcpAllowedClients, handlers.MCP(mcpDeps)))
 
 	// Telegram endpoints (rate limited)
